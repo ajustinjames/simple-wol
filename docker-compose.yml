@@ -1,0 +1,12 @@
+services:
+  simple-wol:
+    build: .
+    network_mode: host
+    cap_add:
+      - NET_RAW
+    volumes:
+      - ./data:/data
+    environment:
+      - PORT=8080
+      - DATA_DIR=/data
+    restart: unless-stopped
