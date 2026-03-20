@@ -1,5 +1,9 @@
 # Simple WoL
 
+## Working Directory
+All commands run from: `/Users/ajames/workspace/ajustinjames/simple-wol/.worktrees/implementation`
+Use absolute paths — do not prefix commands with `cd`.
+
 ## Build & Run
 - `go build -o simple-wol .` — build the binary
 - `go run .` — run the server (default port 8080)

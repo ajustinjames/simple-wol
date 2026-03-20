@@ -2,6 +2,7 @@ package main
 
 import (
 	"testing"
+	"time"
 
 	"golang.org/x/crypto/bcrypt"
 )
@@ -85,5 +86,166 @@ func TestUserExists(t *testing.T) {
 
 	if !UserExists(db) {
 		t.Error("expected UserExists to return true after user creation")
+	}
+}
+
+// --- Task 4: Sessions & Rate Limiting ---
+
+func TestCreateSession(t *testing.T) {
+	db, err := InitDB(":memory:")
+	if err != nil {
+		t.Fatalf("InitDB failed: %v", err)
+	}
+	defer db.Close()
+
+	if err := CreateUser(db, "alice", "password123"); err != nil {
+		t.Fatalf("CreateUser failed: %v", err)
+	}
+	userID, err := AuthenticateUser(db, "alice", "password123")
+	if err != nil {
+		t.Fatalf("AuthenticateUser failed: %v", err)
+	}
+
+	token, err := CreateSession(db, userID, false)
+	if err != nil {
+		t.Fatalf("CreateSession failed: %v", err)
+	}
+	if token == "" {
+		t.Fatal("expected non-empty session token")
+	}
+}
+
+func TestValidateSession(t *testing.T) {
+	db, err := InitDB(":memory:")
+	if err != nil {
+		t.Fatalf("InitDB failed: %v", err)
+	}
+	defer db.Close()
+
+	if err := CreateUser(db, "alice", "password123"); err != nil {
+		t.Fatalf("CreateUser failed: %v", err)
+	}
+	userID, err := AuthenticateUser(db, "alice", "password123")
+	if err != nil {
+		t.Fatalf("AuthenticateUser failed: %v", err)
+	}
+
+	token, err := CreateSession(db, userID, false)
+	if err != nil {
+		t.Fatalf("CreateSession failed: %v", err)
+	}
+
+	gotUserID, err := ValidateSession(db, token)
+	if err != nil {
+		t.Fatalf("ValidateSession failed: %v", err)
+	}
+	if gotUserID != userID {
+		t.Errorf("expected userID %d, got %d", userID, gotUserID)
+	}
+}
+
+func TestValidateSession_InvalidToken(t *testing.T) {
+	db, err := InitDB(":memory:")
+	if err != nil {
+		t.Fatalf("InitDB failed: %v", err)
+	}
+	defer db.Close()
+
+	_, err = ValidateSession(db, "invalidtoken")
+	if err == nil {
+		t.Fatal("expected ValidateSession with invalid token to fail")
+	}
+}
+
+func TestDeleteSession(t *testing.T) {
+	db, err := InitDB(":memory:")
+	if err != nil {
+		t.Fatalf("InitDB failed: %v", err)
+	}
+	defer db.Close()
+
+	if err := CreateUser(db, "alice", "password123"); err != nil {
+		t.Fatalf("CreateUser failed: %v", err)
+	}
+	userID, err := AuthenticateUser(db, "alice", "password123")
+	if err != nil {
+		t.Fatalf("AuthenticateUser failed: %v", err)
+	}
+
+	token, err := CreateSession(db, userID, false)
+	if err != nil {
+		t.Fatalf("CreateSession failed: %v", err)
+	}
+
+	if err := DeleteSession(db, token); err != nil {
+		t.Fatalf("DeleteSession failed: %v", err)
+	}
+
+	_, err = ValidateSession(db, token)
+	if err == nil {
+		t.Fatal("expected ValidateSession to fail after session deleted")
+	}
+}
+
+func TestRateLimiter_AllowsUnderLimit(t *testing.T) {
+	rl := NewRateLimiter(5, time.Minute, time.Minute)
+	ip := "192.168.1.1"
+
+	for i := 0; i < 4; i++ {
+		if !rl.Allow(ip) {
+			t.Fatalf("expected Allow to return true on attempt %d", i+1)
+		}
+		rl.RecordFailure(ip)
+	}
+	if !rl.Allow(ip) {
+		t.Error("expected Allow to return true when under failure limit")
+	}
+}
+
+func TestRateLimiter_BlocksOverLimit(t *testing.T) {
+	rl := NewRateLimiter(5, time.Minute, time.Minute)
+	ip := "192.168.1.2"
+
+	for i := 0; i < 5; i++ {
+		rl.RecordFailure(ip)
+	}
+
+	if rl.Allow(ip) {
+		t.Error("expected Allow to return false after reaching failure limit")
+	}
+}
+
+func TestRateLimiter_ResetOnSuccess(t *testing.T) {
+	rl := NewRateLimiter(5, time.Minute, time.Minute)
+	ip := "192.168.1.3"
+
+	for i := 0; i < 5; i++ {
+		rl.RecordFailure(ip)
+	}
+	if rl.Allow(ip) {
+		t.Fatal("expected blocked after 5 failures")
+	}
+
+	rl.Reset(ip)
+
+	if !rl.Allow(ip) {
+		t.Error("expected Allow to return true after reset")
+	}
+}
+
+func TestRateLimiter_DifferentIPs(t *testing.T) {
+	rl := NewRateLimiter(5, time.Minute, time.Minute)
+	ip1 := "10.0.0.1"
+	ip2 := "10.0.0.2"
+
+	for i := 0; i < 5; i++ {
+		rl.RecordFailure(ip1)
+	}
+
+	if rl.Allow(ip1) {
+		t.Error("expected ip1 to be blocked")
+	}
+	if !rl.Allow(ip2) {
+		t.Error("expected ip2 to be allowed (independent tracking)")
 	}
 }
