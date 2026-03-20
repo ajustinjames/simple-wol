@@ -92,10 +92,14 @@ CREATE TABLE devices (
     mac_address TEXT NOT NULL,
     ip_address TEXT NOT NULL,
     port INTEGER NOT NULL DEFAULT 9,
+    status_port INTEGER NOT NULL DEFAULT 3389,
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
     updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
 );
 ```
+
+- `port`: WoL magic packet destination port (default 9).
+- `status_port`: TCP port used for online status checks (default 3389/RDP for Windows PCs).
 
 ## API Routes
 
@@ -103,7 +107,7 @@ All routes behind auth middleware unless noted.
 
 | Method | Path | Description | Auth |
 |--------|------|-------------|------|
-| POST | `/api/setup` | Create initial user (first run only) | No |
+| POST | `/api/setup` | Create initial user (first run only; returns `409 Conflict` if a user already exists) | No |
 | POST | `/api/login` | Authenticate, return session cookie | No |
 | POST | `/api/logout` | Invalidate session | Yes |
 | GET | `/api/devices` | List all devices | Yes |
@@ -116,7 +120,7 @@ All routes behind auth middleware unless noted.
 ## Wake-on-LAN Logic
 
 - Magic packet: 6 bytes of `0xFF` followed by the target MAC address repeated 16 times (102 bytes total).
-- Sent as a **UDP broadcast** to `255.255.255.255` on the device's configured port (default `9`).
+- Sent as a **UDP broadcast** to `255.255.255.255` on the device's configured port (default `9`). The app assumes the host is on the same broadcast domain as target devices.
 - `POST /api/devices/{id}/wake` sends the packet and returns immediately.
 - The frontend then polls `GET /api/devices/{id}/status` every 3 seconds for up to 60 seconds.
 - Status progression in the UI: **offline → waking → online** (or timeout).
@@ -125,15 +129,15 @@ All routes behind auth middleware unless noted.
 
 ```go
 type PacketSender interface {
-    SendMagicPacket(macAddress string, port int) error
+    SendMagicPacket(macAddress string, broadcastAddr string, port int) error
 }
 ```
 
-This allows tests to mock UDP sending.
+The broadcast address is passed as a parameter to allow flexibility. The default implementation sends to `255.255.255.255`. This also allows tests to mock UDP sending.
 
 ### Status Check
 
-- Uses ICMP ping via Go's `net` package to check if a device is reachable.
+- Uses TCP connect probe to a known port (e.g., RDP 3389 for Windows, or a configurable port per device) to check if a device is reachable. TCP connect does not require elevated privileges unlike ICMP ping.
 - `GET /api/devices/{id}/status` returns `{"status": "online"}` or `{"status": "offline"}`.
 
 ## Frontend
@@ -164,7 +168,7 @@ This allows tests to mock UDP sending.
 
 Multi-stage build:
 1. **Builder stage:** Go image, compiles the binary.
-2. **Final stage:** Alpine, copies the binary only.
+2. **Final stage:** Alpine with `ca-certificates` and `tzdata` installed, copies the binary. All timestamps use UTC.
 
 ### docker-compose.yml
 
@@ -173,6 +177,8 @@ services:
   simple-wol:
     build: .
     network_mode: host
+    cap_add:
+      - NET_RAW
     volumes:
       - ./data:/data
     environment:
@@ -212,7 +218,7 @@ services:
 
 - Passwords hashed with bcrypt (cost 10+).
 - Session tokens are cryptographically random.
-- Cookies: `HttpOnly`, `Secure` (when behind HTTPS/Tailscale), `SameSite=Strict`.
+- Cookies: `HttpOnly`, `SameSite=Strict`. The `Secure` flag is set only when the request arrives over HTTPS (detected via `r.TLS != nil` or `X-Forwarded-Proto` header); over plain HTTP it is omitted to allow local network access.
 - Input validation on MAC addresses, IP addresses, and port numbers.
 - XSS prevention via input sanitization.
 - No encryption at rest for device data (MAC addresses and names are non-sensitive; rely on host-level disk encryption if needed).
