@@ -1,0 +1,89 @@
+package main
+
+import (
+	"testing"
+
+	"golang.org/x/crypto/bcrypt"
+)
+
+func TestHashPassword(t *testing.T) {
+	hash, err := HashPassword("secret")
+	if err != nil {
+		t.Fatalf("HashPassword failed: %v", err)
+	}
+	if hash == "" {
+		t.Fatal("expected non-empty hash")
+	}
+	if err := bcrypt.CompareHashAndPassword([]byte(hash), []byte("secret")); err != nil {
+		t.Fatalf("bcrypt.CompareHashAndPassword failed: %v", err)
+	}
+}
+
+func TestCheckPassword(t *testing.T) {
+	hash, err := HashPassword("mypassword")
+	if err != nil {
+		t.Fatalf("HashPassword failed: %v", err)
+	}
+	if !CheckPassword(hash, "mypassword") {
+		t.Error("expected CheckPassword to return true for correct password")
+	}
+	if CheckPassword(hash, "wrongpassword") {
+		t.Error("expected CheckPassword to return false for wrong password")
+	}
+}
+
+func TestCreateUser(t *testing.T) {
+	db, err := InitDB(":memory:")
+	if err != nil {
+		t.Fatalf("InitDB failed: %v", err)
+	}
+	defer db.Close()
+
+	if err := CreateUser(db, "alice", "password123"); err != nil {
+		t.Fatalf("CreateUser failed: %v", err)
+	}
+
+	var username string
+	err = db.QueryRow("SELECT username FROM users WHERE username = ?", "alice").Scan(&username)
+	if err != nil {
+		t.Fatalf("user not found in DB: %v", err)
+	}
+	if username != "alice" {
+		t.Errorf("expected username 'alice', got '%s'", username)
+	}
+}
+
+func TestCreateUser_DuplicateFails(t *testing.T) {
+	db, err := InitDB(":memory:")
+	if err != nil {
+		t.Fatalf("InitDB failed: %v", err)
+	}
+	defer db.Close()
+
+	if err := CreateUser(db, "alice", "password123"); err != nil {
+		t.Fatalf("first CreateUser failed: %v", err)
+	}
+	if err := CreateUser(db, "alice", "different"); err == nil {
+		t.Fatal("expected duplicate CreateUser to fail, but it succeeded")
+	}
+}
+
+func TestUserExists(t *testing.T) {
+	db, err := InitDB(":memory:")
+	if err != nil {
+		t.Fatalf("InitDB failed: %v", err)
+	}
+	defer db.Close()
+
+	if UserExists(db) {
+		t.Error("expected UserExists to return false on empty DB")
+	}
+
+	if err := CreateUser(db, "alice", "password123"); err != nil {
+		t.Fatalf("CreateUser failed: %v", err)
+	}
+
+	if !UserExists(db) {
+		t.Error("expected UserExists to return true after user creation")
+	}
+}
