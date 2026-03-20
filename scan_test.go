@@ -1,0 +1,58 @@
+package main
+
+import (
+	"testing"
+)
+
+func TestParseARPTableLinux(t *testing.T) {
+	// Simulate /proc/net/arp content
+	content := `IP address       HW type     Flags       HW address            Mask     Device
+192.168.4.1      0x1         0x2         aa:bb:cc:dd:ee:01     *        eth0
+192.168.4.100    0x1         0x2         aa:bb:cc:dd:ee:02     *        eth0
+192.168.4.200    0x1         0x0         00:00:00:00:00:00     *        eth0
+`
+
+	entries := ParseARPTableLinux(content)
+	// Should skip the entry with all-zero MAC (incomplete)
+	if len(entries) != 2 {
+		t.Fatalf("expected 2 entries, got %d", len(entries))
+	}
+	if entries[0].IP != "192.168.4.1" {
+		t.Fatalf("expected IP 192.168.4.1, got %s", entries[0].IP)
+	}
+	if entries[0].MAC != "aa:bb:cc:dd:ee:01" {
+		t.Fatalf("expected MAC aa:bb:cc:dd:ee:01, got %s", entries[0].MAC)
+	}
+}
+
+func TestParseARPTableDarwin(t *testing.T) {
+	content := `? (192.168.4.1) at aa:bb:cc:dd:ee:01 on en0 ifscope [ethernet]
+? (192.168.4.100) at aa:bb:cc:dd:ee:02 on en0 ifscope [ethernet]
+? (192.168.4.200) at (incomplete) on en0 ifscope [ethernet]
+`
+
+	entries := ParseARPTableDarwin(content)
+	if len(entries) != 2 {
+		t.Fatalf("expected 2 entries, got %d", len(entries))
+	}
+	if entries[0].IP != "192.168.4.1" {
+		t.Fatalf("expected IP 192.168.4.1, got %s", entries[0].IP)
+	}
+	if entries[0].MAC != "aa:bb:cc:dd:ee:01" {
+		t.Fatalf("expected MAC aa:bb:cc:dd:ee:01, got %s", entries[0].MAC)
+	}
+}
+
+func TestSubnetIPs(t *testing.T) {
+	ips := SubnetIPs("192.168.4.0", 24)
+	// /24 should give 254 hosts (1-254, excluding .0 and .255)
+	if len(ips) != 254 {
+		t.Fatalf("expected 254 IPs, got %d", len(ips))
+	}
+	if ips[0] != "192.168.4.1" {
+		t.Fatalf("expected first IP 192.168.4.1, got %s", ips[0])
+	}
+	if ips[253] != "192.168.4.254" {
+		t.Fatalf("expected last IP 192.168.4.254, got %s", ips[253])
+	}
+}
