@@ -1,6 +1,9 @@
 package main
 
 import (
+	"net/http"
+	"net/http/httptest"
+	"strings"
 	"testing"
 	"time"
 
@@ -247,5 +250,76 @@ func TestRateLimiter_DifferentIPs(t *testing.T) {
 	}
 	if !rl.Allow(ip2) {
 		t.Error("expected ip2 to be allowed (independent tracking)")
+	}
+}
+
+func TestSetupAndLoginFlow(t *testing.T) {
+	db, err := InitDB(":memory:")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+
+	app := &App{
+		db:      db,
+		sender:  &mockSender{},
+		limiter: NewRateLimiter(5, 10*time.Minute, 15*time.Minute),
+	}
+
+	// Setup
+	body := `{"username":"admin","password":"testpass"}`
+	req := httptest.NewRequest("POST", "/api/setup", strings.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+	app.handleSetup(w, req)
+
+	if w.Code != http.StatusCreated {
+		t.Fatalf("setup: expected 201, got %d", w.Code)
+	}
+
+	// Setup again should fail with 409
+	req = httptest.NewRequest("POST", "/api/setup", strings.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	w = httptest.NewRecorder()
+	app.handleSetup(w, req)
+
+	if w.Code != http.StatusConflict {
+		t.Fatalf("duplicate setup: expected 409, got %d", w.Code)
+	}
+
+	// Login with correct credentials
+	body = `{"username":"admin","password":"testpass","remember":false}`
+	req = httptest.NewRequest("POST", "/api/login", strings.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	req.RemoteAddr = "192.168.1.1:12345"
+	w = httptest.NewRecorder()
+	app.handleLogin(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("login: expected 200, got %d", w.Code)
+	}
+
+	// Check session cookie was set
+	cookies := w.Result().Cookies()
+	found := false
+	for _, c := range cookies {
+		if c.Name == "session" && c.Value != "" {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatal("expected session cookie to be set")
+	}
+
+	// Login with wrong password
+	body = `{"username":"admin","password":"wrong"}`
+	req = httptest.NewRequest("POST", "/api/login", strings.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	req.RemoteAddr = "192.168.1.1:12345"
+	w = httptest.NewRecorder()
+	app.handleLogin(w, req)
+
+	if w.Code != http.StatusUnauthorized {
+		t.Fatalf("bad login: expected 401, got %d", w.Code)
 	}
 }
