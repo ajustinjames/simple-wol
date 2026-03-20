@@ -1,1 +1,57 @@
-<!DOCTYPE html><html><body>index</body></html>
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Simple WoL</title>
+    <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+    <div class="header">
+        <h1>Simple WoL</h1>
+        <button class="btn btn-secondary btn-sm" onclick="logout()">Logout</button>
+    </div>
+
+    <div class="toolbar">
+        <button class="btn btn-primary btn-sm" onclick="toggleAddForm()">Add Device</button>
+        <button class="btn btn-secondary btn-sm" onclick="scanNetwork()">Scan Network</button>
+    </div>
+
+    <div id="add-form" class="inline-form" hidden>
+        <div class="form-row">
+            <div class="form-group">
+                <label for="add-name">Name</label>
+                <input type="text" id="add-name" placeholder="My PC">
+            </div>
+            <div class="form-group">
+                <label for="add-mac">MAC Address</label>
+                <input type="text" id="add-mac" placeholder="AA:BB:CC:DD:EE:FF">
+            </div>
+            <div class="form-group">
+                <label for="add-ip">IP Address</label>
+                <input type="text" id="add-ip" placeholder="192.168.1.100">
+            </div>
+            <div class="form-group">
+                <label for="add-port">WoL Port</label>
+                <input type="number" id="add-port" value="9">
+            </div>
+            <div class="form-group">
+                <label for="add-status-port">Status Port</label>
+                <input type="number" id="add-status-port" value="3389">
+            </div>
+        </div>
+        <div class="form-actions">
+            <button class="btn btn-secondary btn-sm" onclick="toggleAddForm()">Cancel</button>
+            <button class="btn btn-primary btn-sm" onclick="addDevice()">Save</button>
+        </div>
+    </div>
+
+    <div id="scan-results" class="scan-results" hidden></div>
+
+    <div class="content">
+        <div id="device-list"></div>
+    </div>
+
+    <script src="/static/app.js"></script>
+</body>
+</html>
