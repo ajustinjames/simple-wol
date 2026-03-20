@@ -1,1 +1,112 @@
-<!DOCTYPE html><html><body>login</body></html>
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Simple WoL — Login</title>
+    <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+    <div class="login-container">
+        <h1>Simple WoL</h1>
+
+        {{if .NeedsSetup}}
+        <form id="setup-form" onsubmit="return handleSetup(event)">
+            <h2>Create Account</h2>
+            <p class="subtitle">Set up your admin account to get started.</p>
+            <div class="form-group">
+                <label for="setup-username">Username</label>
+                <input type="text" id="setup-username" name="username" required autocomplete="username" autofocus>
+            </div>
+            <div class="form-group">
+                <label for="setup-password">Password</label>
+                <input type="password" id="setup-password" name="password" required autocomplete="new-password">
+            </div>
+            <div class="form-group">
+                <label for="setup-confirm">Confirm Password</label>
+                <input type="password" id="setup-confirm" name="confirm" required autocomplete="new-password">
+            </div>
+            <div id="setup-error" class="error" hidden></div>
+            <button type="submit" class="btn btn-primary">Create Account</button>
+        </form>
+        {{else}}
+        <form id="login-form" onsubmit="return handleLogin(event)">
+            <div class="form-group">
+                <label for="login-username">Username</label>
+                <input type="text" id="login-username" name="username" required autocomplete="username" autofocus>
+            </div>
+            <div class="form-group">
+                <label for="login-password">Password</label>
+                <input type="password" id="login-password" name="password" required autocomplete="current-password">
+            </div>
+            <div class="form-group checkbox-group">
+                <label><input type="checkbox" id="login-remember" name="remember"> Remember me</label>
+            </div>
+            <div id="login-error" class="error" hidden></div>
+            <button type="submit" class="btn btn-primary">Log In</button>
+        </form>
+        {{end}}
+    </div>
+
+    <script>
+        async function handleSetup(e) {
+            e.preventDefault();
+            const errEl = document.getElementById('setup-error');
+            errEl.hidden = true;
+
+            const password = document.getElementById('setup-password').value;
+            const confirm = document.getElementById('setup-confirm').value;
+            if (password !== confirm) {
+                errEl.textContent = 'Passwords do not match.';
+                errEl.hidden = false;
+                return;
+            }
+
+            try {
+                const res = await fetch('/api/setup', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({
+                        username: document.getElementById('setup-username').value,
+                        password: password,
+                    }),
+                });
+                if (!res.ok) {
+                    const data = await res.json();
+                    throw new Error(data.error || 'Setup failed');
+                }
+                window.location.href = '/login';
+            } catch (err) {
+                errEl.textContent = err.message;
+                errEl.hidden = false;
+            }
+        }
+
+        async function handleLogin(e) {
+            e.preventDefault();
+            const errEl = document.getElementById('login-error');
+            errEl.hidden = true;
+
+            try {
+                const res = await fetch('/api/login', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({
+                        username: document.getElementById('login-username').value,
+                        password: document.getElementById('login-password').value,
+                        remember: document.getElementById('login-remember').checked,
+                    }),
+                });
+                if (!res.ok) {
+                    const data = await res.json();
+                    throw new Error(data.error || 'Login failed');
+                }
+                window.location.href = '/';
+            } catch (err) {
+                errEl.textContent = err.message;
+                errEl.hidden = false;
+            }
+        }
+    </script>
+</body>
+</html>
