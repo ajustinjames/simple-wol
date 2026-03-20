@@ -1,1 +1,16 @@
 .worktrees/
+
+# Binary
+simple-wol
+
+# Data
+data/
+*.db
+
+# IDE
+.idea/
+.vscode/
+*.swp
+
+# OS
+.DS_Store
