@@ -9,6 +9,7 @@ import (
 	"net"
 	"net/http"
 	"os"
+	"strings"
 	"path/filepath"
 	"strconv"
 	"time"
@@ -36,7 +37,10 @@ func main() {
 	if dataDir == "" {
 		dataDir = "data"
 	}
-	os.MkdirAll(dataDir, 0755)
+	if err := os.MkdirAll(dataDir, 0755); err != nil {
+		slog.Error("failed to create data directory", "path", dataDir, "error", err)
+		os.Exit(1)
+	}
 	dbPath := filepath.Join(dataDir, "simple-wol.db")
 
 	db, err := InitDB(dbPath)
@@ -109,12 +113,16 @@ func (app *App) requireAuth(next http.HandlerFunc) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		cookie, err := r.Cookie("session")
 		if err != nil {
-			http.Error(w, `{"error":"unauthorized"}`, http.StatusUnauthorized)
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusUnauthorized)
+			w.Write([]byte(`{"error":"unauthorized"}`))
 			return
 		}
 		_, err = ValidateSession(app.db, cookie.Value)
 		if err != nil {
-			http.Error(w, `{"error":"unauthorized"}`, http.StatusUnauthorized)
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusUnauthorized)
+			w.Write([]byte(`{"error":"unauthorized"}`))
 			return
 		}
 		next(w, r)
@@ -237,7 +245,9 @@ func (app *App) handleIndex(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "internal error", http.StatusInternalServerError)
 		return
 	}
-	tmpl.Execute(w, nil)
+	if err := tmpl.Execute(w, nil); err != nil {
+		slog.Error("template execution failed", "error", err)
+	}
 }
 
 func (app *App) handleLoginPage(w http.ResponseWriter, r *http.Request) {
@@ -249,7 +259,9 @@ func (app *App) handleLoginPage(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "internal error", http.StatusInternalServerError)
 		return
 	}
-	tmpl.Execute(w, data)
+	if err := tmpl.Execute(w, data); err != nil {
+		slog.Error("template execution failed", "error", err)
+	}
 }
 
 // --- Device Handlers ---
@@ -302,9 +314,13 @@ func (app *App) handleUpdateDevice(w http.ResponseWriter, r *http.Request) {
 
 	if err := UpdateDevice(app.db, id, d); err != nil {
 		slog.Error("failed to update device", "error", err, "id", id)
-		w.Header().Set("Content-Type", "application/json")
-		w.WriteHeader(http.StatusBadRequest)
-		json.NewEncoder(w).Encode(map[string]string{"error": err.Error()})
+		if strings.Contains(err.Error(), "not found") {
+			http.Error(w, `{"error":"device not found"}`, http.StatusNotFound)
+		} else {
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusBadRequest)
+			json.NewEncoder(w).Encode(map[string]string{"error": err.Error()})
+		}
 		return
 	}
 
@@ -322,7 +338,11 @@ func (app *App) handleDeleteDevice(w http.ResponseWriter, r *http.Request) {
 
 	if err := DeleteDevice(app.db, id); err != nil {
 		slog.Error("failed to delete device", "error", err, "id", id)
-		http.Error(w, `{"error":"internal error"}`, http.StatusInternalServerError)
+		if strings.Contains(err.Error(), "not found") {
+			http.Error(w, `{"error":"device not found"}`, http.StatusNotFound)
+		} else {
+			http.Error(w, `{"error":"internal error"}`, http.StatusInternalServerError)
+		}
 		return
 	}
 
