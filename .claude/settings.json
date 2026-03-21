@@ -1,0 +1,15 @@
+{
+  "hooks": {
+    "SessionStart": [
+      {
+        "matcher": "",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "if [ -d .dash/active ] && ls .dash/active/*.md >/dev/null 2>&1; then count=$(ls .dash/active/*.md 2>/dev/null | wc -l | tr -d ' '); echo \"Dash: $count active issue(s)\"; fi"
+          }
+        ]
+      }
+    ]
+  }
+}

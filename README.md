@@ -115,6 +115,13 @@ TLS_CERT=/path/to/cert.pem TLS_KEY=/path/to/key.pem ./simple-wol
 
 Both variables must be set together — setting only one will cause the server to exit with an error.
 
+## Updating
+
+```bash
+docker compose pull
+docker compose up -d
+```
+
 ## Development
 
 ```bash

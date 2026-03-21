@@ -15,6 +15,8 @@ import (
 	"time"
 )
 
+var version = "dev"
+
 //go:embed static/*
 var staticFiles embed.FS
 
@@ -66,7 +68,8 @@ func main() {
 	mux.HandleFunc("GET /", app.handleIndex)
 	mux.HandleFunc("GET /login", app.handleLoginPage)
 
-	// Auth routes (no auth middleware)
+	// Public API routes (no auth middleware)
+	mux.HandleFunc("GET /api/version", handleVersion)
 	mux.HandleFunc("POST /api/setup", app.handleSetup)
 	mux.HandleFunc("POST /api/login", app.handleLogin)
 
@@ -122,6 +125,11 @@ func securityHeaders(next http.Handler) http.Handler {
 		}
 		next.ServeHTTP(w, r)
 	})
+}
+
+func handleVersion(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]string{"version": version})
 }
 
 func (app *App) startSessionCleanup() {
