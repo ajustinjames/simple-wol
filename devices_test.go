@@ -83,3 +83,27 @@ func TestValidateIP(t *testing.T) {
 		if err := ValidateIP(ip); err == nil { t.Errorf("expected %q invalid", ip) }
 	}
 }
+
+func TestSanitizeName(t *testing.T) {
+	tests := []struct{ input, expected string }{
+		{"My <PC>", "My <PC>"},
+		{`Dad's "Desktop"`, `Dad's "Desktop"`},
+		{"  leading spaces  ", "leading spaces"},
+		{"   ", ""},
+		{"normal name", "normal name"},
+	}
+	for _, tc := range tests {
+		got := SanitizeName(tc.input)
+		if got != tc.expected {
+			t.Errorf("SanitizeName(%q) = %q, want %q", tc.input, got, tc.expected)
+		}
+	}
+}
+
+func TestCreateDevicePreservesSpecialChars(t *testing.T) {
+	db, _ := InitDB(":memory:"); defer db.Close()
+	id, err := CreateDevice(db, Device{Name: "My <PC>", MACAddress: "AA:BB:CC:DD:EE:FF", IPAddress: "192.168.4.100", Port: 9})
+	if err != nil { t.Fatalf("CreateDevice failed: %v", err) }
+	d, _ := GetDevice(db, id)
+	if d.Name != "My <PC>" { t.Fatalf("expected 'My <PC>', got %q", d.Name) }
+}
