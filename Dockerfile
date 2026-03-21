@@ -5,7 +5,7 @@ RUN go mod download
 COPY . .
 RUN CGO_ENABLED=0 go build -o simple-wol .
 
-FROM alpine:3.19
+FROM alpine:3.23
 RUN apk add --no-cache ca-certificates tzdata
 RUN addgroup -S appgroup && adduser -S appuser -G appgroup
 COPY --from=builder /build/simple-wol /usr/local/bin/simple-wol
