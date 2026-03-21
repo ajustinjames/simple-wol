@@ -80,10 +80,27 @@ func main() {
 	mux.HandleFunc("GET /api/devices/{id}/status", app.requireAuth(app.handleDeviceStatus))
 	mux.HandleFunc("POST /api/network/scan", app.requireAuth(app.handleNetworkScan))
 
-	slog.Info("simple-wol starting", "port", port)
-	if err := http.ListenAndServe(":"+port, securityHeaders(mux)); err != nil {
-		slog.Error("server failed", "error", err)
+	handler := securityHeaders(mux)
+	addr := ":" + port
+
+	tlsCert := os.Getenv("TLS_CERT")
+	tlsKey := os.Getenv("TLS_KEY")
+
+	if tlsCert != "" && tlsKey != "" {
+		slog.Info("simple-wol starting with TLS", "port", port)
+		if err := http.ListenAndServeTLS(addr, tlsCert, tlsKey, handler); err != nil {
+			slog.Error("server failed", "error", err)
+			os.Exit(1)
+		}
+	} else if tlsCert != "" || tlsKey != "" {
+		slog.Error("both TLS_CERT and TLS_KEY must be set for TLS")
 		os.Exit(1)
+	} else {
+		slog.Info("simple-wol starting", "port", port)
+		if err := http.ListenAndServe(addr, handler); err != nil {
+			slog.Error("server failed", "error", err)
+			os.Exit(1)
+		}
 	}
 }
 
