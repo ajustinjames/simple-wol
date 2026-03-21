@@ -10,6 +10,41 @@ import (
 	"golang.org/x/crypto/bcrypt"
 )
 
+func TestValidatePassword(t *testing.T) {
+	tests := []struct {
+		name     string
+		password string
+		wantErr  bool
+		errMsg   string
+	}{
+		{"empty password", "", true, "password must be at least 8 characters"},
+		{"too short", "abc", true, "password must be at least 8 characters"},
+		{"7 chars", "abcdefg", true, "password must be at least 8 characters"},
+		{"exactly 8 chars", "abcdefgh", false, ""},
+		{"at 72 bytes", strings.Repeat("a", 72), false, ""},
+		{"exceeds 72 bytes", strings.Repeat("a", 73), true, "password must not exceed 72 bytes"},
+		{"multibyte under 72 chars but over 72 bytes", strings.Repeat("日", 25), true, "password must not exceed 72 bytes"},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			err := ValidatePassword(tc.password)
+			if tc.wantErr {
+				if err == nil {
+					t.Fatal("expected error, got nil")
+				}
+				if err.Error() != tc.errMsg {
+					t.Errorf("expected %q, got %q", tc.errMsg, err.Error())
+				}
+			} else {
+				if err != nil {
+					t.Fatalf("unexpected error: %v", err)
+				}
+			}
+		})
+	}
+}
+
 func TestHashPassword(t *testing.T) {
 	hash, err := HashPassword("secret")
 	if err != nil {
