@@ -389,7 +389,7 @@ func (app *App) handleDeviceStatus(w http.ResponseWriter, r *http.Request) {
 	}
 
 	status := "offline"
-	if CheckDeviceStatus(device.IPAddress, device.StatusPort) {
+	if CheckDeviceStatus(device.IPAddress) {
 		status = "online"
 	}
 

@@ -4,8 +4,9 @@ import (
 	"encoding/hex"
 	"fmt"
 	"net"
+	"os/exec"
+	"runtime"
 	"strings"
-	"time"
 )
 
 type PacketSender interface {
@@ -60,12 +61,12 @@ func WakeDevice(sender PacketSender, mac, broadcastAddr string, port int) error 
 	return sender.SendMagicPacket(mac, broadcastAddr, port)
 }
 
-func CheckDeviceStatus(ip string, port int) bool {
-	addr := fmt.Sprintf("%s:%d", ip, port)
-	conn, err := net.DialTimeout("tcp", addr, 2*time.Second)
-	if err != nil {
-		return false
+func CheckDeviceStatus(ip string) bool {
+	var cmd *exec.Cmd
+	if runtime.GOOS == "darwin" {
+		cmd = exec.Command("ping", "-c", "1", "-W", "1000", ip)
+	} else {
+		cmd = exec.Command("ping", "-c", "1", "-W", "1", ip)
 	}
-	conn.Close()
-	return true
+	return cmd.Run() == nil
 }

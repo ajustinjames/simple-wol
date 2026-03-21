@@ -51,6 +51,31 @@ func TestParseARPTableDarwin(t *testing.T) {
 	}
 }
 
+func TestParseARPTableDarwinNormalizesMAC(t *testing.T) {
+	content := `? (192.168.4.50) at a:bb:c:dd:e:ff on en0 ifscope [ethernet]
+`
+	entries := ParseARPTableDarwin(content)
+	if len(entries) != 1 {
+		t.Fatalf("expected 1 entry, got %d", len(entries))
+	}
+	if entries[0].MAC != "0a:bb:0c:dd:0e:ff" {
+		t.Fatalf("expected normalized MAC 0a:bb:0c:dd:0e:ff, got %s", entries[0].MAC)
+	}
+}
+
+func TestParseARPTableLinuxNormalizesMAC(t *testing.T) {
+	content := `IP address       HW type     Flags       HW address            Mask     Device
+192.168.4.50     0x1         0x2         a:bb:c:dd:e:ff        *        eth0
+`
+	entries := ParseARPTableLinux(content)
+	if len(entries) != 1 {
+		t.Fatalf("expected 1 entry, got %d", len(entries))
+	}
+	if entries[0].MAC != "0a:bb:0c:dd:0e:ff" {
+		t.Fatalf("expected normalized MAC 0a:bb:0c:dd:0e:ff, got %s", entries[0].MAC)
+	}
+}
+
 func TestSubnetIPs(t *testing.T) {
 	ips := SubnetIPs("192.168.4.0", 24)
 	// /24 should give 254 hosts (1-254, excluding .0 and .255)

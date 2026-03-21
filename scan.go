@@ -54,7 +54,7 @@ func ParseARPTableLinux(content string) []ARPEntry {
 		if skipARPEntry(fields[0], mac) {
 			continue
 		}
-		entries = append(entries, ARPEntry{IP: fields[0], MAC: mac})
+		entries = append(entries, ARPEntry{IP: fields[0], MAC: NormalizeMAC(mac)})
 	}
 	return entries
 }
@@ -75,7 +75,7 @@ func ParseARPTableDarwin(content string) []ARPEntry {
 		if mac == "(incomplete)" || skipARPEntry(ip, mac) {
 			continue
 		}
-		entries = append(entries, ARPEntry{IP: ip, MAC: mac})
+		entries = append(entries, ARPEntry{IP: ip, MAC: NormalizeMAC(mac)})
 	}
 	return entries
 }
