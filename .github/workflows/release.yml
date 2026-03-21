@@ -6,6 +6,7 @@ on:
       - "v*.*.*"
 
 permissions:
+  contents: write
   packages: write
 
 jobs:
@@ -42,3 +43,9 @@ jobs:
           tags: |
             ghcr.io/ajustinjames/simple-wol:${{ steps.version.outputs.version }}
             ghcr.io/ajustinjames/simple-wol:latest
+
+      - name: Create GitHub Release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ github.ref_name }}
+        run: gh release create "$TAG" --generate-notes
