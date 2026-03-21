@@ -84,6 +84,12 @@ func main() {
 	}
 }
 
+const maxRequestBody = 1024 // 1KB
+
+func limitBody(w http.ResponseWriter, r *http.Request) {
+	r.Body = http.MaxBytesReader(w, r.Body, maxRequestBody)
+}
+
 func securityHeaders(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Security-Policy", "default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self'; connect-src 'self'")
@@ -152,6 +158,7 @@ func (app *App) requireAuth(next http.HandlerFunc) http.HandlerFunc {
 // --- Auth Handlers ---
 
 func (app *App) handleSetup(w http.ResponseWriter, r *http.Request) {
+	limitBody(w, r)
 	if UserExists(app.db) {
 		http.Error(w, `{"error":"user already exists"}`, http.StatusConflict)
 		return
@@ -190,6 +197,7 @@ func (app *App) handleSetup(w http.ResponseWriter, r *http.Request) {
 }
 
 func (app *App) handleLogin(w http.ResponseWriter, r *http.Request) {
+	limitBody(w, r)
 	ip, _, _ := net.SplitHostPort(r.RemoteAddr)
 	if !app.limiter.Allow(ip) {
 		slog.Warn("login rate limited", "ip", ip)
@@ -305,6 +313,7 @@ func (app *App) handleListDevices(w http.ResponseWriter, r *http.Request) {
 }
 
 func (app *App) handleCreateDevice(w http.ResponseWriter, r *http.Request) {
+	limitBody(w, r)
 	var d Device
 	if err := json.NewDecoder(r.Body).Decode(&d); err != nil {
 		http.Error(w, `{"error":"invalid request"}`, http.StatusBadRequest)
@@ -327,6 +336,7 @@ func (app *App) handleCreateDevice(w http.ResponseWriter, r *http.Request) {
 }
 
 func (app *App) handleUpdateDevice(w http.ResponseWriter, r *http.Request) {
+	limitBody(w, r)
 	id, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
 	if err != nil {
 		http.Error(w, `{"error":"invalid id"}`, http.StatusBadRequest)
