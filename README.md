@@ -1,6 +1,6 @@
 # Simple WoL
 
-A lightweight Wake-on-LAN web application for waking devices on your local network. Built as a single Go binary with an embedded web UI — no external dependencies.
+A lightweight Wake-on-LAN web application for managing and waking devices on your local network. Built as a single Go binary with an embedded web UI — no external dependencies.
 
 ## Features
 
