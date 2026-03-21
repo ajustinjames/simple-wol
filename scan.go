@@ -17,6 +17,28 @@ type ARPEntry struct {
 	MAC string `json:"mac"`
 }
 
+// skipARPEntry returns true for broadcast, multicast, and zero MAC entries.
+func skipARPEntry(ip, mac string) bool {
+	if mac == "00:00:00:00:00:00" || mac == "ff:ff:ff:ff:ff:ff" {
+		return true
+	}
+	parsed := net.ParseIP(ip)
+	if parsed == nil {
+		return true
+	}
+	if parsed.IsMulticast() {
+		return true
+	}
+	// Skip broadcast (255.255.255.255 and subnet broadcasts ending in .255)
+	if parsed.Equal(net.IPv4bcast) {
+		return true
+	}
+	if ip4 := parsed.To4(); ip4 != nil && ip4[3] == 255 {
+		return true
+	}
+	return false
+}
+
 // ParseARPTableLinux parses /proc/net/arp format:
 // IP address       HW type     Flags       HW address            Mask     Device
 // 192.168.4.1      0x1         0x2         aa:bb:cc:dd:ee:01     *        eth0
@@ -29,7 +51,7 @@ func ParseARPTableLinux(content string) []ARPEntry {
 			continue
 		}
 		mac := fields[3]
-		if mac == "00:00:00:00:00:00" {
+		if skipARPEntry(fields[0], mac) {
 			continue
 		}
 		entries = append(entries, ARPEntry{IP: fields[0], MAC: mac})
@@ -50,7 +72,7 @@ func ParseARPTableDarwin(content string) []ARPEntry {
 		// Extract IP from parentheses: (192.168.4.1)
 		ip := strings.Trim(fields[1], "()")
 		mac := fields[3]
-		if mac == "(incomplete)" || mac == "00:00:00:00:00:00" {
+		if mac == "(incomplete)" || skipARPEntry(ip, mac) {
 			continue
 		}
 		entries = append(entries, ARPEntry{IP: ip, MAC: mac})
