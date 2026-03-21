@@ -300,13 +300,13 @@
 
         var loadingDiv = document.createElement('div');
         loadingDiv.className = 'scan-item';
+        var loadingInfo = document.createElement('div');
+        loadingInfo.className = 'scan-item-info';
         var spinnerSpan = document.createElement('span');
         spinnerSpan.className = 'spinner';
-        loadingDiv.appendChild(spinnerSpan);
-        var loadingSpan = document.createElement('span');
-        loadingSpan.className = 'scan-item-info';
-        loadingSpan.textContent = 'Scanning network...';
-        loadingDiv.appendChild(loadingSpan);
+        loadingInfo.appendChild(spinnerSpan);
+        loadingInfo.appendChild(document.createTextNode('Scanning network...'));
+        loadingDiv.appendChild(loadingInfo);
         container.appendChild(loadingDiv);
 
         var res = await api('/api/network/scan', { method: 'POST' });
