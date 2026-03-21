@@ -55,6 +55,20 @@ bash -c "$(curl -fsSL https://raw.githubusercontent.com/ajustinjames/simple-wol/
 
 This creates a privileged LXC container with Docker and starts Simple WoL automatically.
 
+### Binary (GitHub Releases)
+
+Download the latest binary for your platform:
+
+```bash
+# Linux amd64
+curl -fsSL https://github.com/ajustinjames/simple-wol/releases/latest/download/simple-wol_$(curl -fsSL https://api.github.com/repos/ajustinjames/simple-wol/releases/latest | grep tag_name | cut -d'"' -f4 | sed 's/v//')_linux_amd64.tar.gz | tar xz
+sudo mv simple-wol /usr/local/bin/
+
+# Linux arm64 (Raspberry Pi)
+curl -fsSL https://github.com/ajustinjames/simple-wol/releases/latest/download/simple-wol_$(curl -fsSL https://api.github.com/repos/ajustinjames/simple-wol/releases/latest | grep tag_name | cut -d'"' -f4 | sed 's/v//')_linux_arm64.tar.gz | tar xz
+sudo mv simple-wol /usr/local/bin/
+```
+
 ### From Source
 
 ```bash
@@ -114,6 +128,25 @@ TLS_CERT=/path/to/cert.pem TLS_KEY=/path/to/key.pem ./simple-wol
 ```
 
 Both variables must be set together — setting only one will cause the server to exit with an error.
+
+## Updating
+
+### Binary
+
+Re-run the install command to download the latest release:
+
+```bash
+curl -fsSL https://github.com/ajustinjames/simple-wol/releases/latest/download/simple-wol_$(curl -fsSL https://api.github.com/repos/ajustinjames/simple-wol/releases/latest | grep tag_name | cut -d'"' -f4 | sed 's/v//')_linux_$(uname -m | sed 's/x86_64/amd64/' | sed 's/aarch64/arm64/').tar.gz | tar xz
+sudo mv simple-wol /usr/local/bin/
+sudo systemctl restart simple-wol  # if running as a service
+```
+
+### Docker
+
+```bash
+docker compose pull
+docker compose up -d
+```
 
 ## Development
 
