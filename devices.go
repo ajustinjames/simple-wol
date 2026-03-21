@@ -55,12 +55,7 @@ func ValidateIP(ip string) error {
 }
 
 func SanitizeName(name string) string {
-	name = strings.TrimSpace(name)
-	name = strings.ReplaceAll(name, "<", "&lt;")
-	name = strings.ReplaceAll(name, ">", "&gt;")
-	name = strings.ReplaceAll(name, "\"", "&quot;")
-	name = strings.ReplaceAll(name, "'", "&#39;")
-	return name
+	return strings.TrimSpace(name)
 }
 
 func CreateDevice(db *sql.DB, d Device) (int64, error) {

@@ -10,6 +10,41 @@ import (
 	"golang.org/x/crypto/bcrypt"
 )
 
+func TestValidatePassword(t *testing.T) {
+	tests := []struct {
+		name     string
+		password string
+		wantErr  bool
+		errMsg   string
+	}{
+		{"empty password", "", true, "password must be at least 8 characters"},
+		{"too short", "abc", true, "password must be at least 8 characters"},
+		{"7 chars", "abcdefg", true, "password must be at least 8 characters"},
+		{"exactly 8 chars", "abcdefgh", false, ""},
+		{"at 72 bytes", strings.Repeat("a", 72), false, ""},
+		{"exceeds 72 bytes", strings.Repeat("a", 73), true, "password must not exceed 72 bytes"},
+		{"multibyte under 72 chars but over 72 bytes", strings.Repeat("日", 25), true, "password must not exceed 72 bytes"},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			err := ValidatePassword(tc.password)
+			if tc.wantErr {
+				if err == nil {
+					t.Fatal("expected error, got nil")
+				}
+				if err.Error() != tc.errMsg {
+					t.Errorf("expected %q, got %q", tc.errMsg, err.Error())
+				}
+			} else {
+				if err != nil {
+					t.Fatalf("unexpected error: %v", err)
+				}
+			}
+		})
+	}
+}
+
 func TestHashPassword(t *testing.T) {
 	hash, err := HashPassword("secret")
 	if err != nil {
@@ -190,6 +225,61 @@ func TestDeleteSession(t *testing.T) {
 	}
 }
 
+func TestCleanExpiredSessions(t *testing.T) {
+	db, err := InitDB(":memory:")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+
+	CreateUser(db, "alice", "password123")
+	uid, _ := AuthenticateUser(db, "alice", "password123")
+
+	// Create a valid session
+	validToken, _ := CreateSession(db, uid, false)
+
+	// Insert an expired session directly
+	_, err = db.Exec("INSERT INTO sessions (token, user_id, expires_at) VALUES (?, ?, ?)",
+		"expired-token", uid, time.Now().Add(-1*time.Hour))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	count, err := CleanExpiredSessions(db)
+	if err != nil {
+		t.Fatalf("CleanExpiredSessions failed: %v", err)
+	}
+	if count != 1 {
+		t.Errorf("expected 1 deleted, got %d", count)
+	}
+
+	// Valid session should still exist
+	if _, err := ValidateSession(db, validToken); err != nil {
+		t.Error("valid session should not have been deleted")
+	}
+
+	// Expired session should be gone
+	if _, err := ValidateSession(db, "expired-token"); err == nil {
+		t.Error("expired session should have been deleted")
+	}
+}
+
+func TestCleanExpiredSessions_NoExpired(t *testing.T) {
+	db, err := InitDB(":memory:")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+
+	count, err := CleanExpiredSessions(db)
+	if err != nil {
+		t.Fatalf("CleanExpiredSessions failed: %v", err)
+	}
+	if count != 0 {
+		t.Errorf("expected 0 deleted, got %d", count)
+	}
+}
+
 func TestRateLimiter_AllowsUnderLimit(t *testing.T) {
 	rl := NewRateLimiter(5, time.Minute, time.Minute)
 	ip := "192.168.1.1"
@@ -250,6 +340,75 @@ func TestRateLimiter_DifferentIPs(t *testing.T) {
 	}
 	if !rl.Allow(ip2) {
 		t.Error("expected ip2 to be allowed (independent tracking)")
+	}
+}
+
+func TestRateLimiter_CleanupEvictsExpiredWindow(t *testing.T) {
+	rl := NewRateLimiter(5, 1*time.Millisecond, 1*time.Minute)
+	rl.RecordFailure("10.0.0.1")
+	time.Sleep(5 * time.Millisecond)
+	rl.cleanOnce()
+
+	rl.mu.Lock()
+	count := len(rl.attempts)
+	rl.mu.Unlock()
+	if count != 0 {
+		t.Errorf("expected 0 entries after cleanup, got %d", count)
+	}
+}
+
+func TestRateLimiter_CleanupEvictsExpiredLockout(t *testing.T) {
+	rl := NewRateLimiter(1, 1*time.Minute, 1*time.Millisecond)
+	rl.RecordFailure("10.0.0.2") // triggers lockout since maxFailures=1
+	time.Sleep(5 * time.Millisecond)
+	rl.cleanOnce()
+
+	rl.mu.Lock()
+	count := len(rl.attempts)
+	rl.mu.Unlock()
+	if count != 0 {
+		t.Errorf("expected 0 entries after cleanup, got %d", count)
+	}
+}
+
+func TestRateLimiter_CleanupKeepsActive(t *testing.T) {
+	rl := NewRateLimiter(5, 1*time.Hour, 1*time.Hour)
+	rl.RecordFailure("10.0.0.3")
+	rl.cleanOnce()
+
+	rl.mu.Lock()
+	count := len(rl.attempts)
+	rl.mu.Unlock()
+	if count != 1 {
+		t.Errorf("expected 1 active entry, got %d", count)
+	}
+}
+
+func TestRateLimiter_CleanupKeepsActiveLockout(t *testing.T) {
+	rl := NewRateLimiter(1, 1*time.Hour, 1*time.Hour)
+	rl.RecordFailure("10.0.0.4") // triggers lockout
+	rl.cleanOnce()
+
+	rl.mu.Lock()
+	count := len(rl.attempts)
+	rl.mu.Unlock()
+	if count != 1 {
+		t.Errorf("expected 1 locked entry, got %d", count)
+	}
+}
+
+func TestRateLimiter_CleanupEmptiesMap(t *testing.T) {
+	rl := NewRateLimiter(5, 1*time.Millisecond, 1*time.Millisecond)
+	rl.RecordFailure("10.0.0.5")
+	rl.RecordFailure("10.0.0.6")
+	time.Sleep(5 * time.Millisecond)
+	rl.cleanOnce()
+
+	rl.mu.Lock()
+	count := len(rl.attempts)
+	rl.mu.Unlock()
+	if count != 0 {
+		t.Errorf("expected empty map, got %d entries", count)
 	}
 }
 

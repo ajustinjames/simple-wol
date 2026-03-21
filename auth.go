@@ -11,6 +11,16 @@ import (
 	"golang.org/x/crypto/bcrypt"
 )
 
+func ValidatePassword(password string) error {
+	if len(password) < 8 {
+		return fmt.Errorf("password must be at least 8 characters")
+	}
+	if len([]byte(password)) > 72 {
+		return fmt.Errorf("password must not exceed 72 bytes")
+	}
+	return nil
+}
+
 func HashPassword(password string) (string, error) {
 	hash, err := bcrypt.GenerateFromPassword([]byte(password), bcrypt.DefaultCost)
 	if err != nil {
@@ -88,6 +98,14 @@ func ValidateSession(db *sql.DB, token string) (int64, error) {
 	return userID, nil
 }
 
+func CleanExpiredSessions(db *sql.DB) (int64, error) {
+	result, err := db.Exec("DELETE FROM sessions WHERE expires_at < ?", time.Now())
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected()
+}
+
 func DeleteSession(db *sql.DB, token string) error {
 	_, err := db.Exec("DELETE FROM sessions WHERE token = ?", token)
 	return err
@@ -155,4 +173,26 @@ func (rl *RateLimiter) Reset(ip string) {
 	rl.mu.Lock()
 	defer rl.mu.Unlock()
 	delete(rl.attempts, ip)
+}
+
+func (rl *RateLimiter) cleanOnce() {
+	rl.mu.Lock()
+	defer rl.mu.Unlock()
+	for ip, a := range rl.attempts {
+		if !a.lockedAt.IsZero() && time.Since(a.lockedAt) > rl.lockout {
+			delete(rl.attempts, ip)
+		} else if a.lockedAt.IsZero() && time.Since(a.firstFail) > rl.window {
+			delete(rl.attempts, ip)
+		}
+	}
+}
+
+func (rl *RateLimiter) StartCleanup() {
+	go func() {
+		ticker := time.NewTicker(10 * time.Minute)
+		defer ticker.Stop()
+		for range ticker.C {
+			rl.cleanOnce()
+		}
+	}()
 }

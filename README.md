@@ -68,6 +68,52 @@ go build -o simple-wol .
 |------------|---------|--------------------------|
 | `PORT`     | `8080`  | HTTP listen port         |
 | `DATA_DIR` | `data`  | Directory for SQLite DB  |
+| `TLS_CERT` | —       | Path to TLS certificate file (enables HTTPS) |
+| `TLS_KEY`  | —       | Path to TLS private key file (enables HTTPS) |
+
+## Deployment
+
+The application listens on HTTP by default (port 8080). For production use, you should serve it over HTTPS using one of these approaches:
+
+### Reverse Proxy (recommended)
+
+Place Simple WoL behind a TLS-terminating reverse proxy. The `Secure` cookie flag is automatically set when the proxy sends `X-Forwarded-Proto: https`.
+
+**Caddy:**
+
+```
+wol.example.com {
+    reverse_proxy localhost:8080
+}
+```
+
+**nginx:**
+
+```nginx
+server {
+    listen 443 ssl;
+    server_name wol.example.com;
+    ssl_certificate /path/to/cert.pem;
+    ssl_certificate_key /path/to/key.pem;
+
+    location / {
+        proxy_pass http://localhost:8080;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header Host $host;
+    }
+}
+```
+
+### Native TLS
+
+Set both `TLS_CERT` and `TLS_KEY` environment variables to enable HTTPS directly:
+
+```bash
+TLS_CERT=/path/to/cert.pem TLS_KEY=/path/to/key.pem ./simple-wol
+```
+
+Both variables must be set together — setting only one will cause the server to exit with an error.
 
 ## Development
 

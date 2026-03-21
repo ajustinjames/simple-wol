@@ -56,6 +56,9 @@ func main() {
 		limiter: NewRateLimiter(5, 10*time.Minute, 15*time.Minute),
 	}
 
+	app.startSessionCleanup()
+	app.limiter.StartCleanup()
+
 	mux := http.NewServeMux()
 
 	// Static files
@@ -77,11 +80,63 @@ func main() {
 	mux.HandleFunc("GET /api/devices/{id}/status", app.requireAuth(app.handleDeviceStatus))
 	mux.HandleFunc("POST /api/network/scan", app.requireAuth(app.handleNetworkScan))
 
-	slog.Info("simple-wol starting", "port", port)
-	if err := http.ListenAndServe(":"+port, mux); err != nil {
-		slog.Error("server failed", "error", err)
+	handler := securityHeaders(mux)
+	addr := ":" + port
+
+	tlsCert := os.Getenv("TLS_CERT")
+	tlsKey := os.Getenv("TLS_KEY")
+
+	if tlsCert != "" && tlsKey != "" {
+		slog.Info("simple-wol starting with TLS", "port", port)
+		if err := http.ListenAndServeTLS(addr, tlsCert, tlsKey, handler); err != nil {
+			slog.Error("server failed", "error", err)
+			os.Exit(1)
+		}
+	} else if tlsCert != "" || tlsKey != "" {
+		slog.Error("both TLS_CERT and TLS_KEY must be set for TLS")
 		os.Exit(1)
+	} else {
+		slog.Info("simple-wol starting", "port", port)
+		if err := http.ListenAndServe(addr, handler); err != nil {
+			slog.Error("server failed", "error", err)
+			os.Exit(1)
+		}
 	}
+}
+
+const maxRequestBody = 1024 // 1KB
+
+func limitBody(w http.ResponseWriter, r *http.Request) {
+	r.Body = http.MaxBytesReader(w, r.Body, maxRequestBody)
+}
+
+func securityHeaders(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Security-Policy", "default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self'; connect-src 'self'")
+		w.Header().Set("X-Content-Type-Options", "nosniff")
+		w.Header().Set("X-Frame-Options", "DENY")
+		w.Header().Set("Referrer-Policy", "strict-origin-when-cross-origin")
+		w.Header().Set("Permissions-Policy", "camera=(), microphone=(), geolocation=()")
+		if r.TLS != nil || r.Header.Get("X-Forwarded-Proto") == "https" {
+			w.Header().Set("Strict-Transport-Security", "max-age=31536000; includeSubDomains")
+		}
+		next.ServeHTTP(w, r)
+	})
+}
+
+func (app *App) startSessionCleanup() {
+	go func() {
+		ticker := time.NewTicker(1 * time.Hour)
+		defer ticker.Stop()
+		for range ticker.C {
+			count, err := CleanExpiredSessions(app.db)
+			if err != nil {
+				slog.Error("session cleanup failed", "error", err)
+			} else if count > 0 {
+				slog.Info("cleaned expired sessions", "count", count)
+			}
+		}
+	}()
 }
 
 // --- Middleware & Helpers ---
@@ -125,6 +180,12 @@ func (app *App) requireAuth(next http.HandlerFunc) http.HandlerFunc {
 			w.Write([]byte(`{"error":"unauthorized"}`))
 			return
 		}
+		if r.Method != http.MethodGet && r.Header.Get("X-Requested-With") != "XMLHttpRequest" {
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusForbidden)
+			w.Write([]byte(`{"error":"forbidden"}`))
+			return
+		}
 		next(w, r)
 	}
 }
@@ -132,6 +193,7 @@ func (app *App) requireAuth(next http.HandlerFunc) http.HandlerFunc {
 // --- Auth Handlers ---
 
 func (app *App) handleSetup(w http.ResponseWriter, r *http.Request) {
+	limitBody(w, r)
 	if UserExists(app.db) {
 		http.Error(w, `{"error":"user already exists"}`, http.StatusConflict)
 		return
@@ -150,6 +212,13 @@ func (app *App) handleSetup(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	if err := ValidatePassword(req.Password); err != nil {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusBadRequest)
+		json.NewEncoder(w).Encode(map[string]string{"error": err.Error()})
+		return
+	}
+
 	if err := CreateUser(app.db, req.Username, req.Password); err != nil {
 		slog.Error("failed to create user", "error", err)
 		http.Error(w, `{"error":"failed to create user"}`, http.StatusInternalServerError)
@@ -163,6 +232,7 @@ func (app *App) handleSetup(w http.ResponseWriter, r *http.Request) {
 }
 
 func (app *App) handleLogin(w http.ResponseWriter, r *http.Request) {
+	limitBody(w, r)
 	ip, _, _ := net.SplitHostPort(r.RemoteAddr)
 	if !app.limiter.Allow(ip) {
 		slog.Warn("login rate limited", "ip", ip)
@@ -278,6 +348,7 @@ func (app *App) handleListDevices(w http.ResponseWriter, r *http.Request) {
 }
 
 func (app *App) handleCreateDevice(w http.ResponseWriter, r *http.Request) {
+	limitBody(w, r)
 	var d Device
 	if err := json.NewDecoder(r.Body).Decode(&d); err != nil {
 		http.Error(w, `{"error":"invalid request"}`, http.StatusBadRequest)
@@ -300,6 +371,7 @@ func (app *App) handleCreateDevice(w http.ResponseWriter, r *http.Request) {
 }
 
 func (app *App) handleUpdateDevice(w http.ResponseWriter, r *http.Request) {
+	limitBody(w, r)
 	id, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
 	if err != nil {
 		http.Error(w, `{"error":"invalid id"}`, http.StatusBadRequest)
