@@ -225,6 +225,61 @@ func TestDeleteSession(t *testing.T) {
 	}
 }
 
+func TestCleanExpiredSessions(t *testing.T) {
+	db, err := InitDB(":memory:")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+
+	CreateUser(db, "alice", "password123")
+	uid, _ := AuthenticateUser(db, "alice", "password123")
+
+	// Create a valid session
+	validToken, _ := CreateSession(db, uid, false)
+
+	// Insert an expired session directly
+	_, err = db.Exec("INSERT INTO sessions (token, user_id, expires_at) VALUES (?, ?, ?)",
+		"expired-token", uid, time.Now().Add(-1*time.Hour))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	count, err := CleanExpiredSessions(db)
+	if err != nil {
+		t.Fatalf("CleanExpiredSessions failed: %v", err)
+	}
+	if count != 1 {
+		t.Errorf("expected 1 deleted, got %d", count)
+	}
+
+	// Valid session should still exist
+	if _, err := ValidateSession(db, validToken); err != nil {
+		t.Error("valid session should not have been deleted")
+	}
+
+	// Expired session should be gone
+	if _, err := ValidateSession(db, "expired-token"); err == nil {
+		t.Error("expired session should have been deleted")
+	}
+}
+
+func TestCleanExpiredSessions_NoExpired(t *testing.T) {
+	db, err := InitDB(":memory:")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+
+	count, err := CleanExpiredSessions(db)
+	if err != nil {
+		t.Fatalf("CleanExpiredSessions failed: %v", err)
+	}
+	if count != 0 {
+		t.Errorf("expected 0 deleted, got %d", count)
+	}
+}
+
 func TestRateLimiter_AllowsUnderLimit(t *testing.T) {
 	rl := NewRateLimiter(5, time.Minute, time.Minute)
 	ip := "192.168.1.1"

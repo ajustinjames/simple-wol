@@ -56,6 +56,8 @@ func main() {
 		limiter: NewRateLimiter(5, 10*time.Minute, 15*time.Minute),
 	}
 
+	app.startSessionCleanup()
+
 	mux := http.NewServeMux()
 
 	// Static files
@@ -102,6 +104,21 @@ func securityHeaders(next http.Handler) http.Handler {
 		}
 		next.ServeHTTP(w, r)
 	})
+}
+
+func (app *App) startSessionCleanup() {
+	go func() {
+		ticker := time.NewTicker(1 * time.Hour)
+		defer ticker.Stop()
+		for range ticker.C {
+			count, err := CleanExpiredSessions(app.db)
+			if err != nil {
+				slog.Error("session cleanup failed", "error", err)
+			} else if count > 0 {
+				slog.Info("cleaned expired sessions", "count", count)
+			}
+		}
+	}()
 }
 
 // --- Middleware & Helpers ---

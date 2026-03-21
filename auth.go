@@ -98,6 +98,14 @@ func ValidateSession(db *sql.DB, token string) (int64, error) {
 	return userID, nil
 }
 
+func CleanExpiredSessions(db *sql.DB) (int64, error) {
+	result, err := db.Exec("DELETE FROM sessions WHERE expires_at < ?", time.Now())
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected()
+}
+
 func DeleteSession(db *sql.DB, token string) error {
 	_, err := db.Exec("DELETE FROM sessions WHERE token = ?", token)
 	return err
