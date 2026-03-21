@@ -31,6 +31,7 @@
         </form>
         {{else}}
         <form id="login-form" onsubmit="return handleLogin(event)">
+            <div id="setup-success" class="success" hidden>Account created successfully. Please log in.</div>
             <div class="form-group">
                 <label for="login-username">Username</label>
                 <input type="text" id="login-username" name="username" required autocomplete="username" autofocus>
@@ -75,11 +76,16 @@
                     const data = await res.json();
                     throw new Error(data.error || 'Setup failed');
                 }
-                window.location.href = '/login';
+                window.location.href = '/login?setup=success';
             } catch (err) {
                 errEl.textContent = err.message;
                 errEl.hidden = false;
             }
+        }
+
+        if (new URLSearchParams(window.location.search).get('setup') === 'success') {
+            var el = document.getElementById('setup-success');
+            if (el) el.hidden = false;
         }
 
         async function handleLogin(e) {

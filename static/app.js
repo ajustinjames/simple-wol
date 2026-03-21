@@ -300,6 +300,9 @@
 
         var loadingDiv = document.createElement('div');
         loadingDiv.className = 'scan-item';
+        var spinnerSpan = document.createElement('span');
+        spinnerSpan.className = 'spinner';
+        loadingDiv.appendChild(spinnerSpan);
         var loadingSpan = document.createElement('span');
         loadingSpan.className = 'scan-item-info';
         loadingSpan.textContent = 'Scanning network...';
