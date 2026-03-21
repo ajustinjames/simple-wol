@@ -55,26 +55,14 @@ bash -c "$(curl -fsSL https://raw.githubusercontent.com/ajustinjames/simple-wol/
 
 This creates a privileged LXC container with Docker and starts Simple WoL automatically.
 
-### Binary (GitHub Releases)
-
-Download the latest release from the [releases page](https://github.com/ajustinjames/simple-wol/releases/latest), or use the commands below:
-
-```bash
-# Set your platform: amd64 or arm64
-ARCH=amd64
-
-# Download, extract, and install
-VERSION=$(curl -fsSL https://api.github.com/repos/ajustinjames/simple-wol/releases/latest | grep -o '"tag_name":"[^"]*"' | cut -d'"' -f4)
-curl -fsSL "https://github.com/ajustinjames/simple-wol/releases/download/${VERSION}/simple-wol_${VERSION#v}_linux_${ARCH}.tar.gz" | tar xz
-sudo mv simple-wol /usr/local/bin/
-```
-
 ### From Source
 
 ```bash
 go build -o simple-wol .
 ./simple-wol
 ```
+
+Pre-built binaries are also available on the [releases page](https://github.com/ajustinjames/simple-wol/releases/latest).
 
 ## Configuration
 
@@ -130,16 +118,6 @@ TLS_CERT=/path/to/cert.pem TLS_KEY=/path/to/key.pem ./simple-wol
 Both variables must be set together — setting only one will cause the server to exit with an error.
 
 ## Updating
-
-### Binary
-
-Re-run the install commands from [Binary (GitHub Releases)](#binary-github-releases) above, then restart:
-
-```bash
-sudo systemctl restart simple-wol  # if running as a service
-```
-
-### Docker
 
 ```bash
 docker compose pull
