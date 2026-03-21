@@ -35,6 +35,14 @@ docker compose -f docker-compose.local.yml up -d
 
 > `network_mode: host` doesn't work on Docker Desktop. The local config uses port mapping instead. WoL packets won't reach your LAN, but the UI is fully functional.
 
+**Local development with WoL (macOS/Windows):**
+
+Docker Desktop runs containers in a Linux VM, so broadcast packets can never reach your physical LAN. To test WoL locally, run the server natively:
+
+```bash
+go run .
+```
+
 Open `http://localhost:8080` and create your admin account.
 
 ### Proxmox LXC
