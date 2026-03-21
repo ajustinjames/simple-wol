@@ -57,15 +57,15 @@ This creates a privileged LXC container with Docker and starts Simple WoL automa
 
 ### Binary (GitHub Releases)
 
-Download the latest binary for your platform:
+Download the latest release from the [releases page](https://github.com/ajustinjames/simple-wol/releases/latest), or use the commands below:
 
 ```bash
-# Linux amd64
-curl -fsSL https://github.com/ajustinjames/simple-wol/releases/latest/download/simple-wol_$(curl -fsSL https://api.github.com/repos/ajustinjames/simple-wol/releases/latest | grep tag_name | cut -d'"' -f4 | sed 's/v//')_linux_amd64.tar.gz | tar xz
-sudo mv simple-wol /usr/local/bin/
+# Set your platform: amd64 or arm64
+ARCH=amd64
 
-# Linux arm64 (Raspberry Pi)
-curl -fsSL https://github.com/ajustinjames/simple-wol/releases/latest/download/simple-wol_$(curl -fsSL https://api.github.com/repos/ajustinjames/simple-wol/releases/latest | grep tag_name | cut -d'"' -f4 | sed 's/v//')_linux_arm64.tar.gz | tar xz
+# Download, extract, and install
+VERSION=$(curl -fsSL https://api.github.com/repos/ajustinjames/simple-wol/releases/latest | grep -o '"tag_name":"[^"]*"' | cut -d'"' -f4)
+curl -fsSL "https://github.com/ajustinjames/simple-wol/releases/download/${VERSION}/simple-wol_${VERSION#v}_linux_${ARCH}.tar.gz" | tar xz
 sudo mv simple-wol /usr/local/bin/
 ```
 
@@ -133,11 +133,9 @@ Both variables must be set together — setting only one will cause the server t
 
 ### Binary
 
-Re-run the install command to download the latest release:
+Re-run the install commands from [Binary (GitHub Releases)](#binary-github-releases) above, then restart:
 
 ```bash
-curl -fsSL https://github.com/ajustinjames/simple-wol/releases/latest/download/simple-wol_$(curl -fsSL https://api.github.com/repos/ajustinjames/simple-wol/releases/latest | grep tag_name | cut -d'"' -f4 | sed 's/v//')_linux_$(uname -m | sed 's/x86_64/amd64/' | sed 's/aarch64/arm64/').tar.gz | tar xz
-sudo mv simple-wol /usr/local/bin/
 sudo systemctl restart simple-wol  # if running as a service
 ```
 
