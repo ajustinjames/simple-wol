@@ -174,3 +174,25 @@ func (rl *RateLimiter) Reset(ip string) {
 	defer rl.mu.Unlock()
 	delete(rl.attempts, ip)
 }
+
+func (rl *RateLimiter) cleanOnce() {
+	rl.mu.Lock()
+	defer rl.mu.Unlock()
+	for ip, a := range rl.attempts {
+		if !a.lockedAt.IsZero() && time.Since(a.lockedAt) > rl.lockout {
+			delete(rl.attempts, ip)
+		} else if a.lockedAt.IsZero() && time.Since(a.firstFail) > rl.window {
+			delete(rl.attempts, ip)
+		}
+	}
+}
+
+func (rl *RateLimiter) StartCleanup() {
+	go func() {
+		ticker := time.NewTicker(10 * time.Minute)
+		defer ticker.Stop()
+		for range ticker.C {
+			rl.cleanOnce()
+		}
+	}()
+}

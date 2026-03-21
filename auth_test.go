@@ -343,6 +343,75 @@ func TestRateLimiter_DifferentIPs(t *testing.T) {
 	}
 }
 
+func TestRateLimiter_CleanupEvictsExpiredWindow(t *testing.T) {
+	rl := NewRateLimiter(5, 1*time.Millisecond, 1*time.Minute)
+	rl.RecordFailure("10.0.0.1")
+	time.Sleep(5 * time.Millisecond)
+	rl.cleanOnce()
+
+	rl.mu.Lock()
+	count := len(rl.attempts)
+	rl.mu.Unlock()
+	if count != 0 {
+		t.Errorf("expected 0 entries after cleanup, got %d", count)
+	}
+}
+
+func TestRateLimiter_CleanupEvictsExpiredLockout(t *testing.T) {
+	rl := NewRateLimiter(1, 1*time.Minute, 1*time.Millisecond)
+	rl.RecordFailure("10.0.0.2") // triggers lockout since maxFailures=1
+	time.Sleep(5 * time.Millisecond)
+	rl.cleanOnce()
+
+	rl.mu.Lock()
+	count := len(rl.attempts)
+	rl.mu.Unlock()
+	if count != 0 {
+		t.Errorf("expected 0 entries after cleanup, got %d", count)
+	}
+}
+
+func TestRateLimiter_CleanupKeepsActive(t *testing.T) {
+	rl := NewRateLimiter(5, 1*time.Hour, 1*time.Hour)
+	rl.RecordFailure("10.0.0.3")
+	rl.cleanOnce()
+
+	rl.mu.Lock()
+	count := len(rl.attempts)
+	rl.mu.Unlock()
+	if count != 1 {
+		t.Errorf("expected 1 active entry, got %d", count)
+	}
+}
+
+func TestRateLimiter_CleanupKeepsActiveLockout(t *testing.T) {
+	rl := NewRateLimiter(1, 1*time.Hour, 1*time.Hour)
+	rl.RecordFailure("10.0.0.4") // triggers lockout
+	rl.cleanOnce()
+
+	rl.mu.Lock()
+	count := len(rl.attempts)
+	rl.mu.Unlock()
+	if count != 1 {
+		t.Errorf("expected 1 locked entry, got %d", count)
+	}
+}
+
+func TestRateLimiter_CleanupEmptiesMap(t *testing.T) {
+	rl := NewRateLimiter(5, 1*time.Millisecond, 1*time.Millisecond)
+	rl.RecordFailure("10.0.0.5")
+	rl.RecordFailure("10.0.0.6")
+	time.Sleep(5 * time.Millisecond)
+	rl.cleanOnce()
+
+	rl.mu.Lock()
+	count := len(rl.attempts)
+	rl.mu.Unlock()
+	if count != 0 {
+		t.Errorf("expected empty map, got %d entries", count)
+	}
+}
+
 func TestSetupAndLoginFlow(t *testing.T) {
 	db, err := InitDB(":memory:")
 	if err != nil {

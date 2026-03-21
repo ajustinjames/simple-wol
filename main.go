@@ -57,6 +57,7 @@ func main() {
 	}
 
 	app.startSessionCleanup()
+	app.limiter.StartCleanup()
 
 	mux := http.NewServeMux()
 
