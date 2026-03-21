@@ -62,8 +62,6 @@ go build -o simple-wol .
 ./simple-wol
 ```
 
-Pre-built binaries are also available on the [releases page](https://github.com/ajustinjames/simple-wol/releases/latest).
-
 ## Configuration
 
 | Variable   | Default | Description              |
