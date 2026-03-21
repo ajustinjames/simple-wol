@@ -12,6 +12,9 @@
     }
 
     async function api(url, options) {
+        options = options || {};
+        options.headers = options.headers || {};
+        options.headers['X-Requested-With'] = 'XMLHttpRequest';
         var res = await fetch(url, options);
         if (res.status === 401) {
             window.location.href = '/login';

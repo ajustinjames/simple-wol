@@ -139,6 +139,12 @@ func (app *App) requireAuth(next http.HandlerFunc) http.HandlerFunc {
 			w.Write([]byte(`{"error":"unauthorized"}`))
 			return
 		}
+		if r.Method != http.MethodGet && r.Header.Get("X-Requested-With") != "XMLHttpRequest" {
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusForbidden)
+			w.Write([]byte(`{"error":"forbidden"}`))
+			return
+		}
 		next(w, r)
 	}
 }

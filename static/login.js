@@ -14,7 +14,7 @@ async function handleSetup(e) {
     try {
         var res = await fetch('/api/setup', {
             method: 'POST',
-            headers: {'Content-Type': 'application/json'},
+            headers: {'Content-Type': 'application/json', 'X-Requested-With': 'XMLHttpRequest'},
             body: JSON.stringify({
                 username: document.getElementById('setup-username').value,
                 password: password,
@@ -44,7 +44,7 @@ async function handleLogin(e) {
     try {
         var res = await fetch('/api/login', {
             method: 'POST',
-            headers: {'Content-Type': 'application/json'},
+            headers: {'Content-Type': 'application/json', 'X-Requested-With': 'XMLHttpRequest'},
             body: JSON.stringify({
                 username: document.getElementById('login-username').value,
                 password: document.getElementById('login-password').value,
