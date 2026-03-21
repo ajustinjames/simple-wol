@@ -155,8 +155,6 @@
         var mac = document.getElementById('add-mac').value.trim();
         var ip = document.getElementById('add-ip').value.trim();
         var port = parseInt(document.getElementById('add-port').value, 10) || 9;
-        var statusPort = parseInt(document.getElementById('add-status-port').value, 10) || 3389;
-
         if (!name || !mac) {
             alert('Name and MAC address are required.');
             return;
@@ -170,7 +168,6 @@
                 mac_address: mac,
                 ip_address: ip,
                 port: port,
-                status_port: statusPort,
             }),
         });
 
@@ -186,7 +183,6 @@
         document.getElementById('add-mac').value = '';
         document.getElementById('add-ip').value = '';
         document.getElementById('add-port').value = '9';
-        document.getElementById('add-status-port').value = '3389';
         document.getElementById('add-form').hidden = true;
 
         await loadDevices();
@@ -204,8 +200,6 @@
         if (ip === null) return;
         var port = prompt('WoL port:', device.port);
         if (port === null) return;
-        var statusPort = prompt('Status port:', device.status_port);
-        if (statusPort === null) return;
 
         var res = await api('/api/devices/' + id, {
             method: 'PUT',
@@ -215,7 +209,6 @@
                 mac_address: mac.trim(),
                 ip_address: ip.trim(),
                 port: parseInt(port, 10) || 9,
-                status_port: parseInt(statusPort, 10) || 3389,
             }),
         });
 
@@ -300,10 +293,13 @@
 
         var loadingDiv = document.createElement('div');
         loadingDiv.className = 'scan-item';
-        var loadingSpan = document.createElement('span');
-        loadingSpan.className = 'scan-item-info';
-        loadingSpan.textContent = 'Scanning network...';
-        loadingDiv.appendChild(loadingSpan);
+        var loadingInfo = document.createElement('div');
+        loadingInfo.className = 'scan-item-info';
+        var spinnerSpan = document.createElement('span');
+        spinnerSpan.className = 'spinner';
+        loadingInfo.appendChild(spinnerSpan);
+        loadingInfo.appendChild(document.createTextNode('Scanning network...'));
+        loadingDiv.appendChild(loadingInfo);
         container.appendChild(loadingDiv);
 
         var res = await api('/api/network/scan', { method: 'POST' });

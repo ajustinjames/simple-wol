@@ -46,7 +46,6 @@ func createTables(db *sql.DB) error {
 			mac_address TEXT NOT NULL,
 			ip_address TEXT NOT NULL,
 			port INTEGER NOT NULL DEFAULT 9,
-			status_port INTEGER NOT NULL DEFAULT 3389,
 			created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
 			updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
 		)`,
