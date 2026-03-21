@@ -17,15 +17,25 @@ A lightweight Wake-on-LAN web application for waking devices on your local netwo
 
 ### Docker (recommended)
 
+**Production (Linux):**
+
 ```bash
 git clone https://github.com/ajustinjames/simple-wol.git
 cd simple-wol
 docker compose up -d
 ```
 
-Open `http://localhost:8080` and create your admin account.
-
 > **Note:** `network_mode: host` is required for WoL broadcast packets to reach your LAN.
+
+**Local development (macOS/Windows):**
+
+```bash
+docker compose -f docker-compose.local.yml up -d
+```
+
+> `network_mode: host` doesn't work on Docker Desktop. The local config uses port mapping instead. WoL packets won't reach your LAN, but the UI is fully functional.
+
+Open `http://localhost:8080` and create your admin account.
 
 ### Proxmox LXC
 
