@@ -6,7 +6,7 @@ COPY . .
 ARG VERSION=dev
 RUN CGO_ENABLED=0 go build -ldflags "-s -w -X main.version=${VERSION}" -o simple-wol .
 
-FROM alpine:3.23
+FROM alpine:3.24
 RUN apk add --no-cache ca-certificates tzdata
 RUN addgroup -S appgroup && adduser -S appuser -G appgroup
 COPY --from=builder /build/simple-wol /usr/local/bin/simple-wol
