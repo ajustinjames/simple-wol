@@ -21,9 +21,98 @@ var version = "dev"
 var staticFiles embed.FS
 
 type App struct {
-	db      *sql.DB
-	sender  PacketSender
-	limiter *RateLimiter
+	db             *sql.DB
+	sender         PacketSender
+	limiter        *RateLimiter
+	trustedProxies []*net.IPNet
+}
+
+// parseTrustedProxies parses a comma-separated list of IPs and CIDR ranges
+// into a slice of *net.IPNet. Bare IPs are converted to /32 (IPv4) or /128 (IPv6).
+func parseTrustedProxies(raw string) []*net.IPNet {
+	raw = strings.TrimSpace(raw)
+	if raw == "" {
+		return nil
+	}
+	var nets []*net.IPNet
+	for _, entry := range strings.Split(raw, ",") {
+		entry = strings.TrimSpace(entry)
+		if entry == "" {
+			continue
+		}
+		if strings.Contains(entry, "/") {
+			_, cidr, err := net.ParseCIDR(entry)
+			if err != nil {
+				slog.Warn("ignoring invalid CIDR in TRUSTED_PROXIES", "entry", entry, "error", err)
+				continue
+			}
+			nets = append(nets, cidr)
+		} else {
+			ip := net.ParseIP(entry)
+			if ip == nil {
+				slog.Warn("ignoring invalid IP in TRUSTED_PROXIES", "entry", entry)
+				continue
+			}
+			bits := 32
+			if ip.To4() == nil {
+				bits = 128
+			}
+			nets = append(nets, &net.IPNet{
+				IP:   ip,
+				Mask: net.CIDRMask(bits, bits),
+			})
+		}
+	}
+	return nets
+}
+
+// isTrustedProxy checks whether the given IP falls within any trusted proxy range.
+func (app *App) isTrustedProxy(ip net.IP) bool {
+	for _, cidr := range app.trustedProxies {
+		if cidr.Contains(ip) {
+			return true
+		}
+	}
+	return false
+}
+
+// clientIP returns the most likely real client IP for the request.
+// If the peer address is a trusted proxy, it walks X-Forwarded-For from right
+// to left and returns the first entry that is not itself a trusted proxy.
+// If no trusted proxies are configured, or the peer is not trusted, the peer
+// IP is returned directly (forwarded headers are never trusted from unknown peers).
+func (app *App) clientIP(r *http.Request) string {
+	peerIP, _, _ := net.SplitHostPort(r.RemoteAddr)
+	if len(app.trustedProxies) == 0 {
+		return peerIP
+	}
+
+	parsed := net.ParseIP(peerIP)
+	if parsed == nil || !app.isTrustedProxy(parsed) {
+		return peerIP
+	}
+
+	xff := r.Header.Get("X-Forwarded-For")
+	if xff == "" {
+		return peerIP
+	}
+
+	parts := strings.Split(xff, ",")
+	for i := len(parts) - 1; i >= 0; i-- {
+		entry := strings.TrimSpace(parts[i])
+		if entry == "" {
+			continue
+		}
+		entryIP := net.ParseIP(entry)
+		if entryIP == nil {
+			continue
+		}
+		if !app.isTrustedProxy(entryIP) {
+			return entry
+		}
+	}
+
+	return peerIP
 }
 
 func main() {
@@ -52,10 +141,16 @@ func main() {
 	}
 	defer db.Close()
 
+	trustedProxies := parseTrustedProxies(os.Getenv("TRUSTED_PROXIES"))
+	if len(trustedProxies) > 0 {
+		slog.Info("trusted proxies configured", "count", len(trustedProxies))
+	}
+
 	app := &App{
-		db:      db,
-		sender:  &UDPSender{},
-		limiter: NewRateLimiter(5, 10*time.Minute, 15*time.Minute),
+		db:             db,
+		sender:         &UDPSender{},
+		limiter:        NewRateLimiter(5, 10*time.Minute, 15*time.Minute),
+		trustedProxies: trustedProxies,
 	}
 
 	app.startSessionCleanup()
@@ -241,7 +336,7 @@ func (app *App) handleSetup(w http.ResponseWriter, r *http.Request) {
 
 func (app *App) handleLogin(w http.ResponseWriter, r *http.Request) {
 	limitBody(w, r)
-	ip, _, _ := net.SplitHostPort(r.RemoteAddr)
+	ip := app.clientIP(r)
 	if !app.limiter.Allow(ip) {
 		slog.Warn("login rate limited", "ip", ip)
 		http.Error(w, `{"error":"too many attempts, try again later"}`, http.StatusTooManyRequests)

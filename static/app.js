@@ -381,15 +381,14 @@
 
     // --- Init ---
 
-    // Expose functions to inline onclick handlers
-    window.toggleAddForm = toggleAddForm;
-    window.addDevice = addDevice;
-    window.editDevice = editDevice;
-    window.deleteDevice = deleteDevice;
-    window.wakeDevice = wakeDevice;
-    window.scanNetwork = scanNetwork;
-    window.addScannedDevice = addScannedDevice;
-    window.logout = logout;
+    // Wire up event handlers via addEventListener (CSP-safe, no inline handlers)
+    document.addEventListener('DOMContentLoaded', function () {
+        document.getElementById('logout-btn').addEventListener('click', logout);
+        document.getElementById('add-device-btn').addEventListener('click', toggleAddForm);
+        document.getElementById('scan-btn').addEventListener('click', scanNetwork);
+        document.getElementById('cancel-add-btn').addEventListener('click', toggleAddForm);
+        document.getElementById('save-device-btn').addEventListener('click', addDevice);
 
-    document.addEventListener('DOMContentLoaded', loadDevices);
+        loadDevices();
+    });
 })();
