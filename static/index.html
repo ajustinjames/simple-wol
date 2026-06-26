@@ -9,12 +9,12 @@
 <body>
     <div class="header">
         <h1>Simple WoL</h1>
-        <button class="btn btn-secondary btn-sm" onclick="logout()">Logout</button>
+        <button id="logout-btn" class="btn btn-secondary btn-sm">Logout</button>
     </div>
 
     <div class="toolbar">
-        <button class="btn btn-primary btn-sm" onclick="toggleAddForm()">Add Device</button>
-        <button class="btn btn-secondary btn-sm" onclick="scanNetwork()">Scan Network</button>
+        <button id="add-device-btn" class="btn btn-primary btn-sm">Add Device</button>
+        <button id="scan-btn" class="btn btn-secondary btn-sm">Scan Network</button>
     </div>
 
     <div id="add-form" class="inline-form" hidden>
@@ -37,8 +37,8 @@
             </div>
         </div>
         <div class="form-actions">
-            <button class="btn btn-secondary btn-sm" onclick="toggleAddForm()">Cancel</button>
-            <button class="btn btn-primary btn-sm" onclick="addDevice()">Save</button>
+            <button id="cancel-add-btn" class="btn btn-secondary btn-sm">Cancel</button>
+            <button id="save-device-btn" class="btn btn-primary btn-sm">Save</button>
         </div>
     </div>
 

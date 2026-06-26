@@ -11,7 +11,7 @@
         <h1>Simple WoL</h1>
 
         {{if .NeedsSetup}}
-        <form id="setup-form" onsubmit="return handleSetup(event)">
+        <form id="setup-form">
             <h2>Create Account</h2>
             <p class="subtitle">Set up your admin account to get started.</p>
             <div class="form-group">
@@ -30,7 +30,7 @@
             <button type="submit" class="btn btn-primary">Create Account</button>
         </form>
         {{else}}
-        <form id="login-form" onsubmit="return handleLogin(event)">
+        <form id="login-form">
             <div id="setup-success" class="success" hidden>Account created successfully. Please log in.</div>
             <div class="form-group">
                 <label for="login-username">Username</label>
