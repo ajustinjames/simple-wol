@@ -379,6 +379,153 @@
         window.location.href = '/login';
     }
 
+    // --- API Tokens ---
+
+    function toggleTokensPanel() {
+        var panel = document.getElementById('tokens-panel');
+        panel.hidden = !panel.hidden;
+        if (!panel.hidden) {
+            document.getElementById('new-token-result').hidden = true;
+            document.getElementById('new-token-result').textContent = '';
+            loadTokens();
+        }
+    }
+
+    async function loadTokens() {
+        var res = await api('/api/tokens');
+        if (!res) return;
+        if (!res.ok) return;
+        var tokens = await res.json();
+        if (!Array.isArray(tokens)) tokens = [];
+        renderTokens(tokens);
+    }
+
+    function renderTokens(tokens) {
+        var container = document.getElementById('token-list');
+        container.textContent = '';
+
+        if (tokens.length === 0) {
+            var msg = document.createElement('p');
+            msg.style.color = '#888';
+            msg.style.fontSize = '0.875rem';
+            msg.style.marginTop = '0.75rem';
+            msg.textContent = 'No API tokens yet.';
+            container.appendChild(msg);
+            return;
+        }
+
+        var table = document.createElement('table');
+        table.className = 'device-table';
+
+        var thead = document.createElement('thead');
+        var headerRow = document.createElement('tr');
+        ['Name', 'Created', 'Last Used', 'Status', 'Actions'].forEach(function (text) {
+            var th = document.createElement('th');
+            th.textContent = text;
+            headerRow.appendChild(th);
+        });
+        thead.appendChild(headerRow);
+        table.appendChild(thead);
+
+        var tbody = document.createElement('tbody');
+
+        tokens.forEach(function (t) {
+            var tr = document.createElement('tr');
+
+            var nameTd = document.createElement('td');
+            nameTd.textContent = t.name;
+            tr.appendChild(nameTd);
+
+            var createdTd = document.createElement('td');
+            createdTd.textContent = t.created_at ? new Date(t.created_at).toLocaleString() : '';
+            tr.appendChild(createdTd);
+
+            var lastUsedTd = document.createElement('td');
+            lastUsedTd.textContent = t.last_used_at ? new Date(t.last_used_at).toLocaleString() : 'Never';
+            tr.appendChild(lastUsedTd);
+
+            var statusTd = document.createElement('td');
+            statusTd.textContent = t.revoked_at ? 'Revoked' : 'Active';
+            tr.appendChild(statusTd);
+
+            var actionsTd = document.createElement('td');
+            if (!t.revoked_at) {
+                var revokeBtn = document.createElement('button');
+                revokeBtn.className = 'btn btn-danger btn-sm';
+                revokeBtn.textContent = 'Revoke';
+                revokeBtn.addEventListener('click', function () { revokeToken(t.id); });
+                actionsTd.appendChild(revokeBtn);
+            }
+            tr.appendChild(actionsTd);
+
+            tbody.appendChild(tr);
+        });
+
+        table.appendChild(tbody);
+        container.appendChild(table);
+    }
+
+    async function createToken() {
+        var nameInput = document.getElementById('new-token-name');
+        var name = nameInput.value.trim();
+        if (!name) {
+            alert('Token name is required.');
+            return;
+        }
+
+        var res = await api('/api/tokens', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ name: name }),
+        });
+
+        if (!res) return;
+        if (!res.ok) {
+            var data = await res.json();
+            alert(data.error || 'Failed to create token');
+            return;
+        }
+
+        var created = await res.json();
+        nameInput.value = '';
+
+        var resultDiv = document.getElementById('new-token-result');
+        resultDiv.hidden = false;
+        resultDiv.textContent = '';
+
+        var warning = document.createElement('p');
+        warning.className = 'success';
+        warning.textContent = 'Token created. Copy it now — it will not be shown again:';
+        resultDiv.appendChild(warning);
+
+        var tokenCode = document.createElement('code');
+        tokenCode.style.display = 'block';
+        tokenCode.style.wordBreak = 'break-all';
+        tokenCode.style.padding = '0.5rem 0.75rem';
+        tokenCode.style.background = '#16213e';
+        tokenCode.style.border = '1px solid #333';
+        tokenCode.style.borderRadius = '4px';
+        tokenCode.style.marginBottom = '0.75rem';
+        tokenCode.textContent = created.token;
+        resultDiv.appendChild(tokenCode);
+
+        await loadTokens();
+    }
+
+    async function revokeToken(id) {
+        if (!confirm('Revoke this token? Any integration using it will stop working.')) return;
+
+        var res = await api('/api/tokens/' + id, { method: 'DELETE' });
+        if (!res) return;
+        if (!res.ok) {
+            var data = await res.json();
+            alert(data.error || 'Failed to revoke token');
+            return;
+        }
+
+        await loadTokens();
+    }
+
     // --- Init ---
 
     // Wire up event handlers via addEventListener (CSP-safe, no inline handlers)
@@ -388,6 +535,9 @@
         document.getElementById('scan-btn').addEventListener('click', scanNetwork);
         document.getElementById('cancel-add-btn').addEventListener('click', toggleAddForm);
         document.getElementById('save-device-btn').addEventListener('click', addDevice);
+        document.getElementById('tokens-btn').addEventListener('click', toggleTokensPanel);
+        document.getElementById('close-tokens-btn').addEventListener('click', toggleTokensPanel);
+        document.getElementById('create-token-btn').addEventListener('click', createToken);
 
         loadDevices();
     });

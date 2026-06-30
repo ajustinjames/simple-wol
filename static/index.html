@@ -15,6 +15,7 @@
     <div class="toolbar">
         <button id="add-device-btn" class="btn btn-primary btn-sm">Add Device</button>
         <button id="scan-btn" class="btn btn-secondary btn-sm">Scan Network</button>
+        <button id="tokens-btn" class="btn btn-secondary btn-sm">API Tokens</button>
     </div>
 
     <div id="add-form" class="inline-form" hidden>
@@ -43,6 +44,21 @@
     </div>
 
     <div id="scan-results" class="scan-results" hidden></div>
+
+    <div id="tokens-panel" class="inline-form" hidden>
+        <div class="form-row">
+            <div class="form-group">
+                <label for="new-token-name">Token Name</label>
+                <input type="text" id="new-token-name" placeholder="home-assistant">
+            </div>
+        </div>
+        <div class="form-actions">
+            <button id="close-tokens-btn" class="btn btn-secondary btn-sm">Close</button>
+            <button id="create-token-btn" class="btn btn-primary btn-sm">Create Token</button>
+        </div>
+        <div id="new-token-result" hidden></div>
+        <div id="token-list"></div>
+    </div>
 
     <div class="content">
         <div id="device-list"></div>
