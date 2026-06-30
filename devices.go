@@ -15,6 +15,7 @@ type Device struct {
 	MACAddress string    `json:"mac_address"`
 	IPAddress  string    `json:"ip_address"`
 	Port       int       `json:"port"`
+	GroupName  string    `json:"group_name"`
 	CreatedAt  time.Time `json:"created_at"`
 	UpdatedAt  time.Time `json:"updated_at"`
 }
@@ -67,7 +68,8 @@ func CreateDevice(db *sql.DB, d Device) (int64, error) {
 		return 0, err
 	}
 	d.Name = SanitizeName(d.Name)
-	result, err := db.Exec("INSERT INTO devices (name, mac_address, ip_address, port) VALUES (?, ?, ?, ?)", d.Name, d.MACAddress, d.IPAddress, d.Port)
+	d.GroupName = SanitizeName(d.GroupName)
+	result, err := db.Exec("INSERT INTO devices (name, mac_address, ip_address, port, group_name) VALUES (?, ?, ?, ?, ?)", d.Name, d.MACAddress, d.IPAddress, d.Port, d.GroupName)
 	if err != nil {
 		return 0, fmt.Errorf("create device: %w", err)
 	}
@@ -75,7 +77,7 @@ func CreateDevice(db *sql.DB, d Device) (int64, error) {
 }
 
 func ListDevices(db *sql.DB) ([]Device, error) {
-	rows, err := db.Query("SELECT id, name, mac_address, ip_address, port, created_at, updated_at FROM devices ORDER BY name")
+	rows, err := db.Query("SELECT id, name, mac_address, ip_address, port, group_name, created_at, updated_at FROM devices ORDER BY name")
 	if err != nil {
 		return nil, err
 	}
@@ -83,7 +85,7 @@ func ListDevices(db *sql.DB) ([]Device, error) {
 	var devices []Device
 	for rows.Next() {
 		var d Device
-		if err := rows.Scan(&d.ID, &d.Name, &d.MACAddress, &d.IPAddress, &d.Port, &d.CreatedAt, &d.UpdatedAt); err != nil {
+		if err := rows.Scan(&d.ID, &d.Name, &d.MACAddress, &d.IPAddress, &d.Port, &d.GroupName, &d.CreatedAt, &d.UpdatedAt); err != nil {
 			return nil, err
 		}
 		devices = append(devices, d)
@@ -93,7 +95,7 @@ func ListDevices(db *sql.DB) ([]Device, error) {
 
 func GetDevice(db *sql.DB, id int64) (Device, error) {
 	var d Device
-	err := db.QueryRow("SELECT id, name, mac_address, ip_address, port, created_at, updated_at FROM devices WHERE id = ?", id).Scan(&d.ID, &d.Name, &d.MACAddress, &d.IPAddress, &d.Port, &d.CreatedAt, &d.UpdatedAt)
+	err := db.QueryRow("SELECT id, name, mac_address, ip_address, port, group_name, created_at, updated_at FROM devices WHERE id = ?", id).Scan(&d.ID, &d.Name, &d.MACAddress, &d.IPAddress, &d.Port, &d.GroupName, &d.CreatedAt, &d.UpdatedAt)
 	if err != nil {
 		return d, fmt.Errorf("device not found: %w", err)
 	}
@@ -109,7 +111,8 @@ func UpdateDevice(db *sql.DB, id int64, d Device) error {
 		return err
 	}
 	d.Name = SanitizeName(d.Name)
-	result, err := db.Exec("UPDATE devices SET name=?, mac_address=?, ip_address=?, port=?, updated_at=? WHERE id=?", d.Name, d.MACAddress, d.IPAddress, d.Port, time.Now(), id)
+	d.GroupName = SanitizeName(d.GroupName)
+	result, err := db.Exec("UPDATE devices SET name=?, mac_address=?, ip_address=?, port=?, group_name=?, updated_at=? WHERE id=?", d.Name, d.MACAddress, d.IPAddress, d.Port, d.GroupName, time.Now(), id)
 	if err != nil {
 		return err
 	}
@@ -118,6 +121,26 @@ func UpdateDevice(db *sql.DB, id int64, d Device) error {
 		return fmt.Errorf("device not found")
 	}
 	return nil
+}
+
+// ListDevicesByGroup returns all devices belonging to the given group name
+// (case-sensitive exact match). Returns an empty slice (not an error) if the
+// group has no members or does not exist.
+func ListDevicesByGroup(db *sql.DB, group string) ([]Device, error) {
+	rows, err := db.Query("SELECT id, name, mac_address, ip_address, port, group_name, created_at, updated_at FROM devices WHERE group_name = ? ORDER BY name", group)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var devices []Device
+	for rows.Next() {
+		var d Device
+		if err := rows.Scan(&d.ID, &d.Name, &d.MACAddress, &d.IPAddress, &d.Port, &d.GroupName, &d.CreatedAt, &d.UpdatedAt); err != nil {
+			return nil, err
+		}
+		devices = append(devices, d)
+	}
+	return devices, rows.Err()
 }
 
 func DeleteDevice(db *sql.DB, id int64) error {

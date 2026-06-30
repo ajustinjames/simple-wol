@@ -199,3 +199,110 @@ func TestBodySizeLimit_ExactBoundary(t *testing.T) {
 		t.Errorf("expected 400, got %d", w.Code)
 	}
 }
+
+// --- Wake Group ---
+
+func newWakeGroupRequest(group string) *http.Request {
+	req := httptest.NewRequest("POST", "/api/groups/"+group+"/wake", nil)
+	req.SetPathValue("group", group)
+	return req
+}
+
+func TestWakeGroup_AllSucceed(t *testing.T) {
+	app := setupTestApp(t)
+	mock := &mockSender{}
+	app.sender = mock
+
+	CreateDevice(app.db, Device{Name: "PC1", MACAddress: "AA:BB:CC:DD:EE:01", IPAddress: "192.168.4.1", Port: 9, GroupName: "Lab"})
+	CreateDevice(app.db, Device{Name: "PC2", MACAddress: "AA:BB:CC:DD:EE:02", IPAddress: "192.168.4.2", Port: 9, GroupName: "Lab"})
+
+	w := httptest.NewRecorder()
+	app.handleWakeGroup(w, newWakeGroupRequest("Lab"))
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", w.Code, w.Body.String())
+	}
+
+	var resp struct {
+		Group   string            `json:"group"`
+		Results []WakeGroupResult `json:"results"`
+	}
+	if err := json.NewDecoder(w.Body).Decode(&resp); err != nil {
+		t.Fatalf("decode failed: %v", err)
+	}
+	if len(resp.Results) != 2 {
+		t.Fatalf("expected 2 results, got %d", len(resp.Results))
+	}
+	for _, r := range resp.Results {
+		if !r.Success {
+			t.Errorf("expected device %d to succeed, got error %q", r.DeviceID, r.Error)
+		}
+	}
+}
+
+func TestWakeGroup_PartialFailure(t *testing.T) {
+	app := setupTestApp(t)
+	failMAC := "aa:bb:cc:dd:ee:02"
+	sender := &failingSender{FailFor: map[string]bool{failMAC: true}}
+	app.sender = sender
+
+	CreateDevice(app.db, Device{Name: "PC1", MACAddress: "AA:BB:CC:DD:EE:01", IPAddress: "192.168.4.1", Port: 9, GroupName: "Lab"})
+	CreateDevice(app.db, Device{Name: "PC2", MACAddress: "AA:BB:CC:DD:EE:02", IPAddress: "192.168.4.2", Port: 9, GroupName: "Lab"})
+
+	w := httptest.NewRecorder()
+	app.handleWakeGroup(w, newWakeGroupRequest("Lab"))
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", w.Code, w.Body.String())
+	}
+
+	var resp struct {
+		Results []WakeGroupResult `json:"results"`
+	}
+	if err := json.NewDecoder(w.Body).Decode(&resp); err != nil {
+		t.Fatalf("decode failed: %v", err)
+	}
+	if len(resp.Results) != 2 {
+		t.Fatalf("expected 2 results, got %d", len(resp.Results))
+	}
+
+	successCount, failureCount := 0, 0
+	for _, r := range resp.Results {
+		if r.Success {
+			successCount++
+		} else {
+			failureCount++
+			if r.Name != "PC2" {
+				t.Errorf("expected PC2 to be the failing device, got %q", r.Name)
+			}
+			if r.Error == "" {
+				t.Error("expected error message on failed result")
+			}
+		}
+	}
+	if successCount != 1 || failureCount != 1 {
+		t.Fatalf("expected 1 success and 1 failure, got %d success, %d failure", successCount, failureCount)
+	}
+}
+
+func TestWakeGroup_EmptyOrNonexistentGroup(t *testing.T) {
+	app := setupTestApp(t)
+	CreateDevice(app.db, Device{Name: "PC1", MACAddress: "AA:BB:CC:DD:EE:01", IPAddress: "192.168.4.1", Port: 9, GroupName: "Lab"})
+
+	w := httptest.NewRecorder()
+	app.handleWakeGroup(w, newWakeGroupRequest("Nonexistent"))
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", w.Code, w.Body.String())
+	}
+
+	var resp struct {
+		Results []WakeGroupResult `json:"results"`
+	}
+	if err := json.NewDecoder(w.Body).Decode(&resp); err != nil {
+		t.Fatalf("decode failed: %v", err)
+	}
+	if len(resp.Results) != 0 {
+		t.Fatalf("expected 0 results for nonexistent group, got %d", len(resp.Results))
+	}
+}

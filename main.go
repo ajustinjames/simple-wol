@@ -8,6 +8,7 @@ import (
 	"log/slog"
 	"net"
 	"net/http"
+	"net/url"
 	"os"
 	"strings"
 	"path/filepath"
@@ -176,6 +177,7 @@ func main() {
 	mux.HandleFunc("DELETE /api/devices/{id}", app.requireAuth(app.handleDeleteDevice))
 	mux.HandleFunc("POST /api/devices/{id}/wake", app.requireAuth(app.handleWakeDevice))
 	mux.HandleFunc("GET /api/devices/{id}/status", app.requireAuth(app.handleDeviceStatus))
+	mux.HandleFunc("POST /api/groups/{group}/wake", app.requireAuth(app.handleWakeGroup))
 	mux.HandleFunc("POST /api/network/scan", app.requireAuth(app.handleNetworkScan))
 
 	handler := securityHeaders(mux)
@@ -548,6 +550,47 @@ func (app *App) handleWakeDevice(w http.ResponseWriter, r *http.Request) {
 	slog.Info("WoL packet sent", "device", device.Name, "mac", device.MACAddress, "port", device.Port)
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]string{"status": "ok"})
+}
+
+// WakeGroupResult reports the outcome of waking a single device as part of a
+// group wake request.
+type WakeGroupResult struct {
+	DeviceID int64  `json:"device_id"`
+	Name     string `json:"name"`
+	Success  bool   `json:"success"`
+	Error    string `json:"error,omitempty"`
+}
+
+func (app *App) handleWakeGroup(w http.ResponseWriter, r *http.Request) {
+	group, err := url.PathUnescape(r.PathValue("group"))
+	if err != nil {
+		http.Error(w, `{"error":"invalid group"}`, http.StatusBadRequest)
+		return
+	}
+
+	devices, err := ListDevicesByGroup(app.db, group)
+	if err != nil {
+		slog.Error("failed to list devices for group", "group", group, "error", err)
+		http.Error(w, `{"error":"internal error"}`, http.StatusInternalServerError)
+		return
+	}
+
+	results := make([]WakeGroupResult, 0, len(devices))
+	for _, device := range devices {
+		res := WakeGroupResult{DeviceID: device.ID, Name: device.Name}
+		if err := WakeDevice(app.sender, device.MACAddress, "255.255.255.255", device.Port); err != nil {
+			slog.Error("failed to send WoL packet", "error", err, "device", device.Name, "group", group)
+			res.Success = false
+			res.Error = "failed to send WoL packet"
+		} else {
+			res.Success = true
+		}
+		results = append(results, res)
+	}
+
+	slog.Info("group wake requested", "group", group, "device_count", len(devices))
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]interface{}{"group": group, "results": results})
 }
 
 func (app *App) handleDeviceStatus(w http.ResponseWriter, r *http.Request) {
