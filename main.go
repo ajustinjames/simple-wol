@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"database/sql"
 	"embed"
 	"encoding/json"
@@ -9,9 +10,9 @@ import (
 	"net"
 	"net/http"
 	"os"
-	"strings"
 	"path/filepath"
 	"strconv"
+	"strings"
 	"time"
 )
 
@@ -25,6 +26,7 @@ type App struct {
 	sender         PacketSender
 	limiter        *RateLimiter
 	trustedProxies []*net.IPNet
+	scheduler      *Scheduler
 }
 
 // parseTrustedProxies parses a comma-separated list of IPs and CIDR ranges
@@ -152,9 +154,14 @@ func main() {
 		limiter:        NewRateLimiter(5, 10*time.Minute, 15*time.Minute),
 		trustedProxies: trustedProxies,
 	}
+	app.scheduler = NewScheduler(db, app.sender)
 
 	app.startSessionCleanup()
 	app.limiter.StartCleanup()
+
+	schedulerCtx, stopScheduler := context.WithCancel(context.Background())
+	defer stopScheduler()
+	app.scheduler.Start(schedulerCtx)
 
 	mux := http.NewServeMux()
 
@@ -177,6 +184,9 @@ func main() {
 	mux.HandleFunc("POST /api/devices/{id}/wake", app.requireAuth(app.handleWakeDevice))
 	mux.HandleFunc("GET /api/devices/{id}/status", app.requireAuth(app.handleDeviceStatus))
 	mux.HandleFunc("POST /api/network/scan", app.requireAuth(app.handleNetworkScan))
+	mux.HandleFunc("GET /api/devices/{id}/schedules", app.requireAuth(app.handleListSchedules))
+	mux.HandleFunc("POST /api/devices/{id}/schedules", app.requireAuth(app.handleCreateSchedule))
+	mux.HandleFunc("DELETE /api/schedules/{id}", app.requireAuth(app.handleDeleteSchedule))
 
 	handler := securityHeaders(mux)
 	addr := ":" + port
@@ -585,4 +595,101 @@ func (app *App) handleNetworkScan(w http.ResponseWriter, r *http.Request) {
 	slog.Info("network scan complete", "devices_found", len(entries))
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(entries)
+}
+
+// --- Schedule Handlers ---
+
+func (app *App) handleListSchedules(w http.ResponseWriter, r *http.Request) {
+	deviceID, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
+	if err != nil {
+		http.Error(w, `{"error":"invalid id"}`, http.StatusBadRequest)
+		return
+	}
+
+	if _, err := GetDevice(app.db, deviceID); err != nil {
+		http.Error(w, `{"error":"device not found"}`, http.StatusNotFound)
+		return
+	}
+
+	schedules, err := ListSchedulesForDevice(app.db, deviceID)
+	if err != nil {
+		slog.Error("failed to list schedules", "error", err, "device_id", deviceID)
+		http.Error(w, `{"error":"internal error"}`, http.StatusInternalServerError)
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(schedules)
+}
+
+func (app *App) handleCreateSchedule(w http.ResponseWriter, r *http.Request) {
+	limitBody(w, r)
+	deviceID, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
+	if err != nil {
+		http.Error(w, `{"error":"invalid id"}`, http.StatusBadRequest)
+		return
+	}
+
+	var req struct {
+		Hour       int   `json:"hour"`
+		Minute     int   `json:"minute"`
+		DaysOfWeek int   `json:"days_of_week"`
+		Enabled    *bool `json:"enabled"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, `{"error":"invalid request"}`, http.StatusBadRequest)
+		return
+	}
+
+	enabled := true
+	if req.Enabled != nil {
+		enabled = *req.Enabled
+	}
+
+	s := Schedule{
+		DeviceID:   deviceID,
+		Hour:       req.Hour,
+		Minute:     req.Minute,
+		DaysOfWeek: req.DaysOfWeek,
+		Enabled:    enabled,
+	}
+
+	id, err := CreateSchedule(app.db, s)
+	if err != nil {
+		slog.Error("failed to create schedule", "error", err, "device_id", deviceID)
+		w.Header().Set("Content-Type", "application/json")
+		if strings.Contains(err.Error(), "device not found") {
+			w.WriteHeader(http.StatusNotFound)
+		} else {
+			w.WriteHeader(http.StatusBadRequest)
+		}
+		json.NewEncoder(w).Encode(map[string]string{"error": err.Error()})
+		return
+	}
+
+	slog.Info("schedule created", "device_id", deviceID, "hour", req.Hour, "minute", req.Minute, "days_of_week", req.DaysOfWeek)
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusCreated)
+	json.NewEncoder(w).Encode(map[string]int64{"id": id})
+}
+
+func (app *App) handleDeleteSchedule(w http.ResponseWriter, r *http.Request) {
+	id, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
+	if err != nil {
+		http.Error(w, `{"error":"invalid id"}`, http.StatusBadRequest)
+		return
+	}
+
+	if err := DeleteSchedule(app.db, id); err != nil {
+		slog.Error("failed to delete schedule", "error", err, "id", id)
+		if strings.Contains(err.Error(), "not found") {
+			http.Error(w, `{"error":"schedule not found"}`, http.StatusNotFound)
+		} else {
+			http.Error(w, `{"error":"internal error"}`, http.StatusInternalServerError)
+		}
+		return
+	}
+
+	slog.Info("schedule deleted", "id", id)
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]string{"status": "ok"})
 }

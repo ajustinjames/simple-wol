@@ -118,8 +118,30 @@
             deleteBtn.addEventListener('click', function () { deleteDevice(d.id); });
             actionsTd.appendChild(deleteBtn);
 
+            actionsTd.appendChild(document.createTextNode(' '));
+
+            var scheduleBtn = document.createElement('button');
+            scheduleBtn.className = 'btn btn-secondary btn-sm';
+            scheduleBtn.textContent = 'Schedules';
+            scheduleBtn.addEventListener('click', function () { toggleSchedulePanel(d.id); });
+            actionsTd.appendChild(scheduleBtn);
+
             tr.appendChild(actionsTd);
             tbody.appendChild(tr);
+
+            // Hidden schedule panel row, toggled via the Schedules button.
+            var scheduleTr = document.createElement('tr');
+            scheduleTr.id = 'schedule-row-' + d.id;
+            scheduleTr.className = 'schedule-row';
+            scheduleTr.hidden = true;
+            var scheduleTd = document.createElement('td');
+            scheduleTd.colSpan = 5;
+            var panel = document.createElement('div');
+            panel.className = 'schedule-panel';
+            panel.id = 'schedule-panel-' + d.id;
+            scheduleTd.appendChild(panel);
+            scheduleTr.appendChild(scheduleTd);
+            tbody.appendChild(scheduleTr);
         });
 
         table.appendChild(tbody);
@@ -285,6 +307,175 @@
                 updateStatusIndicator(id, 'online');
             }
         }, interval);
+    }
+
+    // --- Schedules ---
+
+    var DAY_LABELS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+    var scheduleSelectedDays = {}; // deviceId -> Set of weekday bit indices (0-6)
+
+    function toggleSchedulePanel(deviceId) {
+        var row = document.getElementById('schedule-row-' + deviceId);
+        if (!row) return;
+        row.hidden = !row.hidden;
+        if (!row.hidden) {
+            loadSchedules(deviceId);
+        }
+    }
+
+    async function loadSchedules(deviceId) {
+        var panel = document.getElementById('schedule-panel-' + deviceId);
+        if (!panel) return;
+
+        var res = await api('/api/devices/' + deviceId + '/schedules');
+        if (!res) return;
+        var schedules = [];
+        if (res.ok) {
+            schedules = await res.json();
+            if (!Array.isArray(schedules)) schedules = [];
+        }
+
+        renderSchedulePanel(deviceId, panel, schedules);
+    }
+
+    function renderSchedulePanel(deviceId, panel, schedules) {
+        panel.textContent = '';
+
+        var listDiv = document.createElement('div');
+        listDiv.className = 'schedule-list';
+
+        if (schedules.length === 0) {
+            var empty = document.createElement('div');
+            empty.className = 'schedule-empty';
+            empty.textContent = 'No schedules yet.';
+            listDiv.appendChild(empty);
+        } else {
+            schedules.forEach(function (s) {
+                var item = document.createElement('div');
+                item.className = 'schedule-item';
+
+                var infoSpan = document.createElement('span');
+                var timeStr = pad2(s.hour) + ':' + pad2(s.minute);
+                infoSpan.textContent = timeStr;
+
+                var daysSpan = document.createElement('span');
+                daysSpan.className = 'schedule-item-days';
+                daysSpan.textContent = formatDays(s.days_of_week);
+                infoSpan.appendChild(daysSpan);
+
+                item.appendChild(infoSpan);
+
+                var delBtn = document.createElement('button');
+                delBtn.className = 'btn btn-danger btn-sm';
+                delBtn.textContent = 'Delete';
+                delBtn.addEventListener('click', function () { deleteSchedule(deviceId, s.id); });
+                item.appendChild(delBtn);
+
+                listDiv.appendChild(item);
+            });
+        }
+
+        panel.appendChild(listDiv);
+
+        // Add-schedule form, built from the <template>.
+        var template = document.getElementById('schedule-add-form-template');
+        var formFragment = template.content.cloneNode(true);
+
+        var dayGroup = formFragment.querySelector('.day-toggle-group');
+        scheduleSelectedDays[deviceId] = scheduleSelectedDays[deviceId] || new Set();
+        DAY_LABELS.forEach(function (label, idx) {
+            var btn = document.createElement('button');
+            btn.type = 'button';
+            btn.className = 'day-toggle';
+            btn.textContent = label;
+            if (scheduleSelectedDays[deviceId].has(idx)) {
+                btn.classList.add('active');
+            }
+            btn.addEventListener('click', function () {
+                if (scheduleSelectedDays[deviceId].has(idx)) {
+                    scheduleSelectedDays[deviceId].delete(idx);
+                    btn.classList.remove('active');
+                } else {
+                    scheduleSelectedDays[deviceId].add(idx);
+                    btn.classList.add('active');
+                }
+            });
+            dayGroup.appendChild(btn);
+        });
+
+        var timeInput = formFragment.querySelector('.schedule-time-input');
+        var saveBtn = formFragment.querySelector('.schedule-save-btn');
+        saveBtn.addEventListener('click', function () {
+            addSchedule(deviceId, timeInput.value);
+        });
+
+        panel.appendChild(formFragment);
+    }
+
+    function pad2(n) {
+        return (n < 10 ? '0' : '') + n;
+    }
+
+    function formatDays(mask) {
+        var days = [];
+        for (var i = 0; i < 7; i++) {
+            if (mask & (1 << i)) days.push(DAY_LABELS[i]);
+        }
+        if (days.length === 7) return 'Every day';
+        return days.join(', ');
+    }
+
+    async function addSchedule(deviceId, timeValue) {
+        if (!timeValue) {
+            alert('Please choose a time.');
+            return;
+        }
+        var selected = scheduleSelectedDays[deviceId] || new Set();
+        if (selected.size === 0) {
+            alert('Select at least one day.');
+            return;
+        }
+
+        var parts = timeValue.split(':');
+        var hour = parseInt(parts[0], 10);
+        var minute = parseInt(parts[1], 10);
+        var daysOfWeek = 0;
+        selected.forEach(function (idx) { daysOfWeek |= (1 << idx); });
+
+        var res = await api('/api/devices/' + deviceId + '/schedules', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                hour: hour,
+                minute: minute,
+                days_of_week: daysOfWeek,
+                enabled: true,
+            }),
+        });
+
+        if (!res) return;
+        if (!res.ok) {
+            var data = await res.json();
+            alert(data.error || 'Failed to add schedule');
+            return;
+        }
+
+        scheduleSelectedDays[deviceId] = new Set();
+        await loadSchedules(deviceId);
+    }
+
+    async function deleteSchedule(deviceId, scheduleId) {
+        if (!confirm('Delete this schedule?')) return;
+
+        var res = await api('/api/schedules/' + scheduleId, { method: 'DELETE' });
+        if (!res) return;
+        if (!res.ok) {
+            var data = await res.json();
+            alert(data.error || 'Failed to delete schedule');
+            return;
+        }
+
+        await loadSchedules(deviceId);
     }
 
     // --- Network Scan ---

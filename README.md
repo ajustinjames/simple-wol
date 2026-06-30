@@ -6,6 +6,7 @@ A lightweight Wake-on-LAN web application for managing and waking devices on you
 
 - Wake devices via magic packet (WoL)
 - Device management with status monitoring (online/offline/waking)
+- Scheduled and recurring wakes (e.g. nightly backups, weekday mornings)
 - Network scanning to discover devices on your LAN
 - Dark-themed responsive web UI
 - Single-user authentication with session management
@@ -70,6 +71,19 @@ go build -o simple-wol .
 | `DATA_DIR` | `data`  | Directory for SQLite DB  |
 | `TLS_CERT` | —       | Path to TLS certificate file (enables HTTPS) |
 | `TLS_KEY`  | —       | Path to TLS private key file (enables HTTPS) |
+| `TZ`       | system default (UTC in most minimal containers) | Time zone used to evaluate schedule times |
+
+## Scheduled Wakes
+
+Each device can have one or more schedules (a time of day plus a set of
+days of the week). A background scheduler checks once a minute for due
+schedules and sends the WoL magic packet automatically, logging the result.
+
+**Time zone:** schedule times (hour/minute) are interpreted in the server
+process's local time zone (Go's `time.Local`), not the browser's time zone.
+The Docker image includes `tzdata`, so set the `TZ` environment variable
+(e.g. `TZ=America/New_York`) to control which zone "local" means. If `TZ`
+is unset, most minimal container images default to UTC.
 
 ## Deployment
 
