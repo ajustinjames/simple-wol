@@ -284,6 +284,68 @@ input:focus {
     overflow-x: auto;
 }
 
+/* Schedules */
+.schedule-row td {
+    padding: 0;
+    border-bottom: 1px solid #2a2a3e;
+}
+
+.schedule-panel {
+    background: #16213e;
+    padding: 1rem 1.5rem;
+}
+
+.schedule-list {
+    margin-bottom: 0.75rem;
+}
+
+.schedule-item {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 0.5rem 0;
+    border-bottom: 1px solid #2a2a3e;
+    font-size: 0.875rem;
+}
+
+.schedule-item:last-child {
+    border-bottom: none;
+}
+
+.schedule-item-days {
+    color: #888;
+    font-size: 0.75rem;
+    margin-left: 0.5rem;
+}
+
+.schedule-empty {
+    color: #888;
+    font-size: 0.875rem;
+    padding: 0.5rem 0;
+}
+
+.day-toggle-group {
+    display: flex;
+    gap: 0.35rem;
+    flex-wrap: wrap;
+}
+
+.day-toggle {
+    padding: 0.35rem 0.5rem;
+    background: #16213e;
+    border: 1px solid #333;
+    border-radius: 4px;
+    color: #aaa;
+    font-size: 0.75rem;
+    cursor: pointer;
+}
+
+.day-toggle.active {
+    background: #e94560;
+    border-color: #e94560;
+    color: #fff;
+}
+
 /* Responsive */
 @media (max-width: 600px) {
     .device-table th:nth-child(3),

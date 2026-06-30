@@ -9,4 +9,5 @@ services:
     environment:
       - PORT=8080
       - DATA_DIR=/data
+      # - TZ=America/New_York  # time zone for scheduled wakes (defaults to UTC)
     restart: unless-stopped

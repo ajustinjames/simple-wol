@@ -49,6 +49,22 @@ func createTables(db *sql.DB) error {
 			created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
 			updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
 		)`,
+		// schedules: a simple time-of-day + day-of-week-bitmask spec per device.
+		// days_of_week is a bitmask, bit 0 = Sunday ... bit 6 = Saturday (matches
+		// time.Weekday values 0-6), so any subset of days can be represented as a
+		// single integer (0-127). hour/minute are evaluated in the server's local
+		// time zone (time.Local) - see scheduler.go for details.
+		`CREATE TABLE IF NOT EXISTS schedules (
+			id INTEGER PRIMARY KEY AUTOINCREMENT,
+			device_id INTEGER NOT NULL REFERENCES devices(id) ON DELETE CASCADE,
+			hour INTEGER NOT NULL,
+			minute INTEGER NOT NULL,
+			days_of_week INTEGER NOT NULL,
+			enabled INTEGER NOT NULL DEFAULT 1,
+			last_fired_at DATETIME,
+			created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+		)`,
+		`CREATE INDEX IF NOT EXISTS idx_schedules_device_id ON schedules(device_id)`,
 	}
 
 	for _, q := range tables {

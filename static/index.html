@@ -44,6 +44,22 @@
 
     <div id="scan-results" class="scan-results" hidden></div>
 
+    <template id="schedule-add-form-template">
+        <div class="form-row">
+            <div class="form-group">
+                <label>Time (server local time)</label>
+                <input type="time" class="schedule-time-input" value="02:00">
+            </div>
+            <div class="form-group">
+                <label>Days</label>
+                <div class="day-toggle-group"></div>
+            </div>
+        </div>
+        <div class="form-actions">
+            <button type="button" class="btn btn-primary btn-sm schedule-save-btn">Add Schedule</button>
+        </div>
+    </template>
+
     <div class="content">
         <div id="device-list"></div>
     </div>
