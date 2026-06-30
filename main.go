@@ -539,13 +539,18 @@ func (app *App) handleWakeDevice(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err := WakeDevice(app.sender, device.MACAddress, "255.255.255.255", device.Port); err != nil {
+	broadcastAddr := device.BroadcastAddress
+	if broadcastAddr == "" {
+		broadcastAddr = DefaultBroadcastAddress
+	}
+
+	if err := WakeDevice(app.sender, device.MACAddress, broadcastAddr, device.Port); err != nil {
 		slog.Error("failed to send WoL packet", "error", err, "device", device.Name)
 		http.Error(w, `{"error":"failed to send WoL packet"}`, http.StatusInternalServerError)
 		return
 	}
 
-	slog.Info("WoL packet sent", "device", device.Name, "mac", device.MACAddress, "port", device.Port)
+	slog.Info("WoL packet sent", "device", device.Name, "mac", device.MACAddress, "port", device.Port, "broadcast_address", broadcastAddr)
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]string{"status": "ok"})
 }

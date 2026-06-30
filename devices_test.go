@@ -107,3 +107,82 @@ func TestCreateDevicePreservesSpecialChars(t *testing.T) {
 	d, _ := GetDevice(db, id)
 	if d.Name != "My <PC>" { t.Fatalf("expected 'My <PC>', got %q", d.Name) }
 }
+
+func TestCreateDevice_DefaultBroadcastAddress(t *testing.T) {
+	db, _ := InitDB(":memory:"); defer db.Close()
+	id, err := CreateDevice(db, Device{Name: "My PC", MACAddress: "AA:BB:CC:DD:EE:FF", IPAddress: "192.168.4.100", Port: 9})
+	if err != nil { t.Fatalf("CreateDevice failed: %v", err) }
+	d, _ := GetDevice(db, id)
+	if d.BroadcastAddress != DefaultBroadcastAddress {
+		t.Fatalf("expected default broadcast address %q, got %q", DefaultBroadcastAddress, d.BroadcastAddress)
+	}
+}
+
+func TestCreateDevice_CustomBroadcastAddress(t *testing.T) {
+	db, _ := InitDB(":memory:"); defer db.Close()
+	id, err := CreateDevice(db, Device{Name: "My PC", MACAddress: "AA:BB:CC:DD:EE:FF", IPAddress: "192.168.4.100", Port: 9, BroadcastAddress: "192.168.5.255"})
+	if err != nil { t.Fatalf("CreateDevice failed: %v", err) }
+	d, _ := GetDevice(db, id)
+	if d.BroadcastAddress != "192.168.5.255" {
+		t.Fatalf("expected custom broadcast address %q, got %q", "192.168.5.255", d.BroadcastAddress)
+	}
+}
+
+func TestCreateDevice_InvalidBroadcastAddress(t *testing.T) {
+	db, _ := InitDB(":memory:"); defer db.Close()
+	_, err := CreateDevice(db, Device{Name: "My PC", MACAddress: "AA:BB:CC:DD:EE:FF", IPAddress: "192.168.4.100", Port: 9, BroadcastAddress: "not-an-ip"})
+	if err == nil { t.Fatal("expected error for invalid broadcast address") }
+}
+
+func TestUpdateDevice_CustomBroadcastAddress(t *testing.T) {
+	db, _ := InitDB(":memory:"); defer db.Close()
+	id, _ := CreateDevice(db, Device{Name: "My PC", MACAddress: "AA:BB:CC:DD:EE:FF", IPAddress: "192.168.4.100", Port: 9})
+	err := UpdateDevice(db, id, Device{Name: "My PC", MACAddress: "AA:BB:CC:DD:EE:FF", IPAddress: "192.168.4.100", Port: 9, BroadcastAddress: "10.0.5.255"})
+	if err != nil { t.Fatalf("UpdateDevice failed: %v", err) }
+	d, _ := GetDevice(db, id)
+	if d.BroadcastAddress != "10.0.5.255" {
+		t.Fatalf("expected broadcast address %q, got %q", "10.0.5.255", d.BroadcastAddress)
+	}
+}
+
+func TestUpdateDevice_EmptyBroadcastFallsBackToDefault(t *testing.T) {
+	db, _ := InitDB(":memory:"); defer db.Close()
+	id, _ := CreateDevice(db, Device{Name: "My PC", MACAddress: "AA:BB:CC:DD:EE:FF", IPAddress: "192.168.4.100", Port: 9, BroadcastAddress: "10.0.5.255"})
+	err := UpdateDevice(db, id, Device{Name: "My PC", MACAddress: "AA:BB:CC:DD:EE:FF", IPAddress: "192.168.4.100", Port: 9})
+	if err != nil { t.Fatalf("UpdateDevice failed: %v", err) }
+	d, _ := GetDevice(db, id)
+	if d.BroadcastAddress != DefaultBroadcastAddress {
+		t.Fatalf("expected default broadcast address %q, got %q", DefaultBroadcastAddress, d.BroadcastAddress)
+	}
+}
+
+func TestUpdateDevice_InvalidBroadcastAddress(t *testing.T) {
+	db, _ := InitDB(":memory:"); defer db.Close()
+	id, _ := CreateDevice(db, Device{Name: "My PC", MACAddress: "AA:BB:CC:DD:EE:FF", IPAddress: "192.168.4.100", Port: 9})
+	err := UpdateDevice(db, id, Device{Name: "My PC", MACAddress: "AA:BB:CC:DD:EE:FF", IPAddress: "192.168.4.100", Port: 9, BroadcastAddress: "999.999.999.999"})
+	if err == nil { t.Fatal("expected error for invalid broadcast address") }
+}
+
+func TestResolveBroadcastAddress(t *testing.T) {
+	tests := []struct {
+		input     string
+		expected  string
+		expectErr bool
+	}{
+		{"", DefaultBroadcastAddress, false},
+		{"   ", DefaultBroadcastAddress, false},
+		{"192.168.5.255", "192.168.5.255", false},
+		{"not-an-ip", "", true},
+		{"999.999.999.999", "", true},
+		{"::1", "", true},
+	}
+	for _, tc := range tests {
+		got, err := ResolveBroadcastAddress(tc.input)
+		if tc.expectErr {
+			if err == nil { t.Errorf("ResolveBroadcastAddress(%q): expected error", tc.input) }
+			continue
+		}
+		if err != nil { t.Errorf("ResolveBroadcastAddress(%q): unexpected error: %v", tc.input, err) }
+		if got != tc.expected { t.Errorf("ResolveBroadcastAddress(%q) = %q, want %q", tc.input, got, tc.expected) }
+	}
+}

@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -173,6 +174,56 @@ func TestBodySizeLimit_OverLimit(t *testing.T) {
 
 	if w.Code != http.StatusBadRequest {
 		t.Errorf("expected 400 for body over limit, got %d", w.Code)
+	}
+}
+
+func TestHandleWakeDevice_UsesDefaultBroadcastAddress(t *testing.T) {
+	app := setupTestApp(t)
+	mock := app.sender.(*mockSender)
+
+	id, err := CreateDevice(app.db, Device{Name: "My PC", MACAddress: "AA:BB:CC:DD:EE:FF", IPAddress: "192.168.4.100", Port: 9})
+	if err != nil {
+		t.Fatalf("CreateDevice failed: %v", err)
+	}
+
+	req := httptest.NewRequest("POST", "/api/devices/"+strconv.FormatInt(id, 10)+"/wake", nil)
+	req.SetPathValue("id", strconv.FormatInt(id, 10))
+	w := httptest.NewRecorder()
+	app.handleWakeDevice(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", w.Code, w.Body.String())
+	}
+	if !mock.called {
+		t.Fatal("expected sender to be called")
+	}
+	if mock.broadcastAddr != DefaultBroadcastAddress {
+		t.Errorf("broadcastAddr = %q, want %q", mock.broadcastAddr, DefaultBroadcastAddress)
+	}
+}
+
+func TestHandleWakeDevice_UsesCustomBroadcastAddress(t *testing.T) {
+	app := setupTestApp(t)
+	mock := app.sender.(*mockSender)
+
+	id, err := CreateDevice(app.db, Device{Name: "My PC", MACAddress: "AA:BB:CC:DD:EE:FF", IPAddress: "192.168.4.100", Port: 9, BroadcastAddress: "192.168.5.255"})
+	if err != nil {
+		t.Fatalf("CreateDevice failed: %v", err)
+	}
+
+	req := httptest.NewRequest("POST", "/api/devices/"+strconv.FormatInt(id, 10)+"/wake", nil)
+	req.SetPathValue("id", strconv.FormatInt(id, 10))
+	w := httptest.NewRecorder()
+	app.handleWakeDevice(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", w.Code, w.Body.String())
+	}
+	if !mock.called {
+		t.Fatal("expected sender to be called")
+	}
+	if mock.broadcastAddr != "192.168.5.255" {
+		t.Errorf("broadcastAddr = %q, want %q", mock.broadcastAddr, "192.168.5.255")
 	}
 }
 
