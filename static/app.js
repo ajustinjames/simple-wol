@@ -33,23 +33,28 @@
         renderDevices();
     }
 
-    function renderDevices() {
-        var container = document.getElementById('device-list');
+    function groupDevices(list) {
+        var groups = {};
+        var order = [];
+        list.forEach(function (d) {
+            var key = (d.group_name || '').trim();
+            if (!key) key = 'Ungrouped';
+            if (!groups[key]) {
+                groups[key] = [];
+                order.push(key);
+            }
+            groups[key].push(d);
+        });
+        // Keep named groups first (alphabetical), Ungrouped last.
+        order.sort(function (a, b) {
+            if (a === 'Ungrouped') return 1;
+            if (b === 'Ungrouped') return -1;
+            return a.localeCompare(b);
+        });
+        return { groups: groups, order: order };
+    }
 
-        if (devices.length === 0) {
-            container.textContent = '';
-            var msg = document.createElement('p');
-            msg.style.color = '#888';
-            msg.style.textAlign = 'center';
-            msg.style.padding = '2rem';
-            msg.textContent = 'No devices yet. Add one to get started.';
-            container.appendChild(msg);
-            return;
-        }
-
-        // Build table using DOM methods to avoid innerHTML with user data
-        container.textContent = '';
-
+    function buildDeviceTable(list) {
         var table = document.createElement('table');
         table.className = 'device-table';
 
@@ -65,7 +70,7 @@
 
         var tbody = document.createElement('tbody');
 
-        devices.forEach(function (d) {
+        list.forEach(function (d) {
             var tr = document.createElement('tr');
             tr.id = 'device-row-' + d.id;
 
@@ -123,13 +128,105 @@
         });
 
         table.appendChild(tbody);
-        container.appendChild(table);
+        return table;
+    }
+
+    function renderDevices() {
+        var container = document.getElementById('device-list');
+
+        if (devices.length === 0) {
+            container.textContent = '';
+            var msg = document.createElement('p');
+            msg.style.color = '#888';
+            msg.style.textAlign = 'center';
+            msg.style.padding = '2rem';
+            msg.textContent = 'No devices yet. Add one to get started.';
+            container.appendChild(msg);
+            return;
+        }
+
+        container.textContent = '';
+
+        var grouped = groupDevices(devices);
+
+        grouped.order.forEach(function (groupName) {
+            var section = document.createElement('div');
+            section.className = 'device-group';
+
+            var header = document.createElement('div');
+            header.className = 'device-group-header';
+
+            var title = document.createElement('h2');
+            title.className = 'device-group-title';
+            title.textContent = groupName;
+            header.appendChild(title);
+
+            if (groupName !== 'Ungrouped') {
+                var wakeAllBtn = document.createElement('button');
+                wakeAllBtn.className = 'btn btn-primary btn-sm';
+                wakeAllBtn.textContent = 'Wake all';
+                wakeAllBtn.addEventListener('click', function () { wakeGroup(groupName); });
+                header.appendChild(wakeAllBtn);
+            }
+
+            section.appendChild(header);
+
+            var resultsDiv = document.createElement('div');
+            resultsDiv.id = 'group-results-' + encodeURIComponent(groupName);
+            resultsDiv.className = 'group-results';
+            resultsDiv.hidden = true;
+            section.appendChild(resultsDiv);
+
+            section.appendChild(buildDeviceTable(grouped.groups[groupName]));
+            container.appendChild(section);
+        });
 
         // Check status for all devices
         devices.forEach(function (d) {
             checkStatus(d.id).then(function (status) {
                 updateStatusIndicator(d.id, status);
             });
+        });
+    }
+
+    async function wakeGroup(groupName) {
+        var resultsDiv = document.getElementById('group-results-' + encodeURIComponent(groupName));
+
+        devices.forEach(function (d) {
+            if ((d.group_name || '').trim() === groupName) {
+                updateStatusIndicator(d.id, 'waking');
+            }
+        });
+
+        var res = await api('/api/groups/' + encodeURIComponent(groupName) + '/wake', { method: 'POST' });
+        if (!res) return;
+
+        if (!res.ok) {
+            var err = await res.json();
+            alert(err.error || 'Failed to wake group');
+            return;
+        }
+
+        var data = await res.json();
+        var results = data.results || [];
+
+        if (resultsDiv) {
+            resultsDiv.hidden = false;
+            resultsDiv.textContent = '';
+            results.forEach(function (r) {
+                var item = document.createElement('div');
+                item.className = 'group-result-item ' + (r.success ? 'success' : 'failure');
+                item.textContent = r.name + ': ' + (r.success ? 'sent' : (r.error || 'failed'));
+                resultsDiv.appendChild(item);
+            });
+        }
+
+        results.forEach(function (r) {
+            if (r.success) {
+                pollStatus(r.device_id);
+            } else {
+                updateStatusIndicator(r.device_id, 'offline');
+            }
         });
     }
 
@@ -158,6 +255,7 @@
         var mac = document.getElementById('add-mac').value.trim();
         var ip = document.getElementById('add-ip').value.trim();
         var port = parseInt(document.getElementById('add-port').value, 10) || 9;
+        var group = document.getElementById('add-group').value.trim();
         if (!name || !mac) {
             alert('Name and MAC address are required.');
             return;
@@ -171,6 +269,7 @@
                 mac_address: mac,
                 ip_address: ip,
                 port: port,
+                group_name: group,
             }),
         });
 
@@ -186,6 +285,7 @@
         document.getElementById('add-mac').value = '';
         document.getElementById('add-ip').value = '';
         document.getElementById('add-port').value = '9';
+        document.getElementById('add-group').value = '';
         document.getElementById('add-form').hidden = true;
 
         await loadDevices();
@@ -203,6 +303,8 @@
         if (ip === null) return;
         var port = prompt('WoL port:', device.port);
         if (port === null) return;
+        var group = prompt('Group (optional):', device.group_name || '');
+        if (group === null) return;
 
         var res = await api('/api/devices/' + id, {
             method: 'PUT',
@@ -212,6 +314,7 @@
                 mac_address: mac.trim(),
                 ip_address: ip.trim(),
                 port: parseInt(port, 10) || 9,
+                group_name: group.trim(),
             }),
         });
 

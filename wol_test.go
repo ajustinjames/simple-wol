@@ -1,6 +1,11 @@
 package main
 
-import "testing"
+import (
+	"errors"
+	"testing"
+)
+
+var errTestSendFailed = errors.New("send failed")
 
 type mockSender struct {
 	called        bool
@@ -11,6 +16,21 @@ type mockSender struct {
 
 func (m *mockSender) SendMagicPacket(mac, broadcastAddr string, port int) error {
 	m.called = true; m.mac = mac; m.broadcastAddr = broadcastAddr; m.port = port; return nil
+}
+
+// failingSender fails SendMagicPacket for any MAC in FailFor, succeeding for
+// all others. Useful for simulating partial failures in group wake tests.
+type failingSender struct {
+	FailFor map[string]bool
+	calls   []string
+}
+
+func (f *failingSender) SendMagicPacket(mac, broadcastAddr string, port int) error {
+	f.calls = append(f.calls, mac)
+	if f.FailFor[mac] {
+		return errTestSendFailed
+	}
+	return nil
 }
 
 func TestBuildMagicPacket(t *testing.T) {

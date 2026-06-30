@@ -107,3 +107,48 @@ func TestCreateDevicePreservesSpecialChars(t *testing.T) {
 	d, _ := GetDevice(db, id)
 	if d.Name != "My <PC>" { t.Fatalf("expected 'My <PC>', got %q", d.Name) }
 }
+
+func TestCreateDevicePersistsGroupName(t *testing.T) {
+	db, _ := InitDB(":memory:"); defer db.Close()
+	id, err := CreateDevice(db, Device{Name: "My PC", MACAddress: "AA:BB:CC:DD:EE:FF", IPAddress: "192.168.4.100", Port: 9, GroupName: "Lab"})
+	if err != nil { t.Fatalf("CreateDevice failed: %v", err) }
+	d, _ := GetDevice(db, id)
+	if d.GroupName != "Lab" { t.Fatalf("expected group_name 'Lab', got %q", d.GroupName) }
+}
+
+func TestCreateDeviceDefaultsGroupNameEmpty(t *testing.T) {
+	db, _ := InitDB(":memory:"); defer db.Close()
+	id, err := CreateDevice(db, Device{Name: "My PC", MACAddress: "AA:BB:CC:DD:EE:FF", IPAddress: "192.168.4.100", Port: 9})
+	if err != nil { t.Fatalf("CreateDevice failed: %v", err) }
+	d, _ := GetDevice(db, id)
+	if d.GroupName != "" { t.Fatalf("expected empty group_name, got %q", d.GroupName) }
+}
+
+func TestUpdateDevicePersistsGroupName(t *testing.T) {
+	db, _ := InitDB(":memory:"); defer db.Close()
+	id, _ := CreateDevice(db, Device{Name: "My PC", MACAddress: "AA:BB:CC:DD:EE:FF", IPAddress: "192.168.4.100", Port: 9})
+	err := UpdateDevice(db, id, Device{Name: "My PC", MACAddress: "AA:BB:CC:DD:EE:FF", IPAddress: "192.168.4.100", Port: 9, GroupName: "Media stack"})
+	if err != nil { t.Fatalf("UpdateDevice failed: %v", err) }
+	d, _ := GetDevice(db, id)
+	if d.GroupName != "Media stack" { t.Fatalf("expected group_name 'Media stack', got %q", d.GroupName) }
+}
+
+func TestListDevicesByGroup(t *testing.T) {
+	db, _ := InitDB(":memory:"); defer db.Close()
+	CreateDevice(db, Device{Name: "PC1", MACAddress: "AA:BB:CC:DD:EE:01", IPAddress: "192.168.4.1", Port: 9, GroupName: "Lab"})
+	CreateDevice(db, Device{Name: "PC2", MACAddress: "AA:BB:CC:DD:EE:02", IPAddress: "192.168.4.2", Port: 9, GroupName: "Lab"})
+	CreateDevice(db, Device{Name: "PC3", MACAddress: "AA:BB:CC:DD:EE:03", IPAddress: "192.168.4.3", Port: 9, GroupName: "Media"})
+
+	devices, err := ListDevicesByGroup(db, "Lab")
+	if err != nil { t.Fatalf("ListDevicesByGroup failed: %v", err) }
+	if len(devices) != 2 { t.Fatalf("expected 2 devices in Lab, got %d", len(devices)) }
+}
+
+func TestListDevicesByGroup_Empty(t *testing.T) {
+	db, _ := InitDB(":memory:"); defer db.Close()
+	CreateDevice(db, Device{Name: "PC1", MACAddress: "AA:BB:CC:DD:EE:01", IPAddress: "192.168.4.1", Port: 9, GroupName: "Lab"})
+
+	devices, err := ListDevicesByGroup(db, "Nonexistent")
+	if err != nil { t.Fatalf("ListDevicesByGroup failed: %v", err) }
+	if len(devices) != 0 { t.Fatalf("expected 0 devices, got %d", len(devices)) }
+}
