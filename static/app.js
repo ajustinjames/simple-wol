@@ -379,6 +379,106 @@
         window.location.href = '/login';
     }
 
+    // --- Account ---
+
+    function showAccountMessage(type, message) {
+        var errEl = document.getElementById('account-error');
+        var okEl = document.getElementById('account-success');
+        errEl.hidden = true;
+        okEl.hidden = true;
+        if (type === 'error') {
+            errEl.textContent = message;
+            errEl.hidden = false;
+        } else {
+            okEl.textContent = message;
+            okEl.hidden = false;
+        }
+    }
+
+    function clearAccountMessages() {
+        document.getElementById('account-error').hidden = true;
+        document.getElementById('account-success').hidden = true;
+    }
+
+    async function openAccountModal() {
+        clearAccountMessages();
+        document.getElementById('username-form').reset();
+        document.getElementById('password-form').reset();
+
+        var res = await api('/api/account');
+        if (res && res.ok) {
+            var data = await res.json();
+            document.getElementById('account-current-username').value = data.username || '';
+        }
+
+        document.getElementById('account-modal').hidden = false;
+    }
+
+    function closeAccountModal() {
+        document.getElementById('account-modal').hidden = true;
+    }
+
+    async function changeUsername(e) {
+        e.preventDefault();
+        clearAccountMessages();
+
+        var newUsername = document.getElementById('account-new-username').value.trim();
+        var password = document.getElementById('username-confirm-password').value;
+        if (!newUsername || !password) {
+            showAccountMessage('error', 'New username and password are required.');
+            return;
+        }
+
+        var res = await api('/api/account/username', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ new_username: newUsername, password: password }),
+        });
+        if (!res) return;
+        if (!res.ok) {
+            var data = await res.json();
+            showAccountMessage('error', data.error || 'Failed to update username');
+            return;
+        }
+
+        document.getElementById('account-current-username').value = newUsername;
+        document.getElementById('username-form').reset();
+        showAccountMessage('success', 'Username updated.');
+    }
+
+    async function changePassword(e) {
+        e.preventDefault();
+        clearAccountMessages();
+
+        var current = document.getElementById('account-current-password').value;
+        var next = document.getElementById('account-new-password').value;
+        var confirmVal = document.getElementById('account-confirm-password').value;
+
+        if (!current || !next) {
+            showAccountMessage('error', 'Current and new password are required.');
+            return;
+        }
+        if (next !== confirmVal) {
+            showAccountMessage('error', 'New passwords do not match.');
+            return;
+        }
+
+        var res = await api('/api/account/password', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ current_password: current, new_password: next }),
+        });
+        if (!res) return;
+        if (!res.ok) {
+            var data = await res.json();
+            showAccountMessage('error', data.error || 'Failed to update password');
+            return;
+        }
+
+        document.getElementById('password-form').reset();
+        showAccountMessage('success', 'Password updated. Other sessions have been signed out.');
+    }
+
     // --- Init ---
 
     // Wire up event handlers via addEventListener (CSP-safe, no inline handlers)
@@ -388,6 +488,11 @@
         document.getElementById('scan-btn').addEventListener('click', scanNetwork);
         document.getElementById('cancel-add-btn').addEventListener('click', toggleAddForm);
         document.getElementById('save-device-btn').addEventListener('click', addDevice);
+
+        document.getElementById('account-btn').addEventListener('click', openAccountModal);
+        document.getElementById('account-close-btn').addEventListener('click', closeAccountModal);
+        document.getElementById('username-form').addEventListener('submit', changeUsername);
+        document.getElementById('password-form').addEventListener('submit', changePassword);
 
         loadDevices();
     });

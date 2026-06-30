@@ -170,6 +170,9 @@ func main() {
 
 	// Protected routes
 	mux.HandleFunc("POST /api/logout", app.requireAuth(app.handleLogout))
+	mux.HandleFunc("GET /api/account", app.requireAuth(app.handleGetAccount))
+	mux.HandleFunc("POST /api/account/password", app.requireAuth(app.handleChangePassword))
+	mux.HandleFunc("POST /api/account/username", app.requireAuth(app.handleChangeUsername))
 	mux.HandleFunc("GET /api/devices", app.requireAuth(app.handleListDevices))
 	mux.HandleFunc("POST /api/devices", app.requireAuth(app.handleCreateDevice))
 	mux.HandleFunc("PUT /api/devices/{id}", app.requireAuth(app.handleUpdateDevice))
@@ -390,6 +393,145 @@ func (app *App) handleLogout(w http.ResponseWriter, r *http.Request) {
 	})
 
 	slog.Info("logout")
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]string{"status": "ok"})
+}
+
+// --- Account Handlers ---
+
+func (app *App) handleGetAccount(w http.ResponseWriter, r *http.Request) {
+	cookie, err := r.Cookie("session")
+	if err != nil {
+		http.Error(w, `{"error":"unauthorized"}`, http.StatusUnauthorized)
+		return
+	}
+	userID, err := ValidateSession(app.db, cookie.Value)
+	if err != nil {
+		http.Error(w, `{"error":"unauthorized"}`, http.StatusUnauthorized)
+		return
+	}
+
+	username, err := GetUsername(app.db, userID)
+	if err != nil {
+		slog.Error("failed to load username", "error", err, "user_id", userID)
+		http.Error(w, `{"error":"internal error"}`, http.StatusInternalServerError)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]string{"username": username})
+}
+
+func (app *App) handleChangePassword(w http.ResponseWriter, r *http.Request) {
+	limitBody(w, r)
+
+	cookie, err := r.Cookie("session")
+	if err != nil {
+		http.Error(w, `{"error":"unauthorized"}`, http.StatusUnauthorized)
+		return
+	}
+	userID, err := ValidateSession(app.db, cookie.Value)
+	if err != nil {
+		http.Error(w, `{"error":"unauthorized"}`, http.StatusUnauthorized)
+		return
+	}
+
+	var req struct {
+		CurrentPassword string `json:"current_password"`
+		NewPassword     string `json:"new_password"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, `{"error":"invalid request"}`, http.StatusBadRequest)
+		return
+	}
+	if req.CurrentPassword == "" || req.NewPassword == "" {
+		http.Error(w, `{"error":"current_password and new_password required"}`, http.StatusBadRequest)
+		return
+	}
+
+	hash, err := GetPasswordHash(app.db, userID)
+	if err != nil {
+		slog.Error("failed to load password hash", "error", err, "user_id", userID)
+		http.Error(w, `{"error":"internal error"}`, http.StatusInternalServerError)
+		return
+	}
+	if !CheckPassword(hash, req.CurrentPassword) {
+		slog.Warn("password change failed: wrong current password", "user_id", userID)
+		http.Error(w, `{"error":"current password is incorrect"}`, http.StatusUnauthorized)
+		return
+	}
+
+	if err := ValidatePassword(req.NewPassword); err != nil {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusBadRequest)
+		json.NewEncoder(w).Encode(map[string]string{"error": err.Error()})
+		return
+	}
+
+	if err := UpdatePassword(app.db, userID, req.NewPassword); err != nil {
+		slog.Error("failed to update password", "error", err, "user_id", userID)
+		http.Error(w, `{"error":"failed to update password"}`, http.StatusInternalServerError)
+		return
+	}
+
+	if err := DeleteOtherSessions(app.db, userID, cookie.Value); err != nil {
+		slog.Error("failed to invalidate other sessions", "error", err, "user_id", userID)
+	}
+
+	slog.Info("password changed", "user_id", userID)
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]string{"status": "ok"})
+}
+
+func (app *App) handleChangeUsername(w http.ResponseWriter, r *http.Request) {
+	limitBody(w, r)
+
+	cookie, err := r.Cookie("session")
+	if err != nil {
+		http.Error(w, `{"error":"unauthorized"}`, http.StatusUnauthorized)
+		return
+	}
+	userID, err := ValidateSession(app.db, cookie.Value)
+	if err != nil {
+		http.Error(w, `{"error":"unauthorized"}`, http.StatusUnauthorized)
+		return
+	}
+
+	var req struct {
+		Password    string `json:"password"`
+		NewUsername string `json:"new_username"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, `{"error":"invalid request"}`, http.StatusBadRequest)
+		return
+	}
+	req.NewUsername = strings.TrimSpace(req.NewUsername)
+	if req.Password == "" || req.NewUsername == "" {
+		http.Error(w, `{"error":"password and new_username required"}`, http.StatusBadRequest)
+		return
+	}
+
+	hash, err := GetPasswordHash(app.db, userID)
+	if err != nil {
+		slog.Error("failed to load password hash", "error", err, "user_id", userID)
+		http.Error(w, `{"error":"internal error"}`, http.StatusInternalServerError)
+		return
+	}
+	if !CheckPassword(hash, req.Password) {
+		slog.Warn("username change failed: wrong password", "user_id", userID)
+		http.Error(w, `{"error":"password is incorrect"}`, http.StatusUnauthorized)
+		return
+	}
+
+	if err := UpdateUsername(app.db, userID, req.NewUsername); err != nil {
+		slog.Warn("failed to update username", "error", err, "user_id", userID)
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusConflict)
+		json.NewEncoder(w).Encode(map[string]string{"error": "username already taken"})
+		return
+	}
+
+	slog.Info("username changed", "user_id", userID, "new_username", req.NewUsername)
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]string{"status": "ok"})
 }

@@ -111,6 +111,57 @@ func DeleteSession(db *sql.DB, token string) error {
 	return err
 }
 
+// DeleteOtherSessions removes all sessions for userID except the one
+// identified by keepToken. Used to invalidate stolen/old sessions when a
+// password is changed.
+func DeleteOtherSessions(db *sql.DB, userID int64, keepToken string) error {
+	_, err := db.Exec("DELETE FROM sessions WHERE user_id = ? AND token != ?", userID, keepToken)
+	return err
+}
+
+// UpdatePassword sets a new password hash for the given user.
+func UpdatePassword(db *sql.DB, userID int64, newPassword string) error {
+	hash, err := HashPassword(newPassword)
+	if err != nil {
+		return err
+	}
+	_, err = db.Exec("UPDATE users SET password_hash = ? WHERE id = ?", hash, userID)
+	if err != nil {
+		return fmt.Errorf("update password: %w", err)
+	}
+	return nil
+}
+
+// GetPasswordHash returns the current password hash for a user.
+func GetPasswordHash(db *sql.DB, userID int64) (string, error) {
+	var hash string
+	err := db.QueryRow("SELECT password_hash FROM users WHERE id = ?", userID).Scan(&hash)
+	if err != nil {
+		return "", fmt.Errorf("user not found")
+	}
+	return hash, nil
+}
+
+// UpdateUsername renames the given user. Returns an error if the username is
+// already taken (UNIQUE constraint) or otherwise invalid.
+func UpdateUsername(db *sql.DB, userID int64, newUsername string) error {
+	_, err := db.Exec("UPDATE users SET username = ? WHERE id = ?", newUsername, userID)
+	if err != nil {
+		return fmt.Errorf("update username: %w", err)
+	}
+	return nil
+}
+
+// GetUsername returns the username for a user.
+func GetUsername(db *sql.DB, userID int64) (string, error) {
+	var username string
+	err := db.QueryRow("SELECT username FROM users WHERE id = ?", userID).Scan(&username)
+	if err != nil {
+		return "", fmt.Errorf("user not found")
+	}
+	return username, nil
+}
+
 type loginAttempt struct {
 	failures  int
 	firstFail time.Time
