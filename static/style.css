@@ -20,6 +20,13 @@ body {
     color: #aaa;
 }
 
+.form-help {
+    display: block;
+    margin-top: 0.25rem;
+    font-size: 0.75rem;
+    color: #888;
+}
+
 .checkbox-group label {
     display: flex;
     align-items: center;

@@ -23,6 +23,11 @@ func InitDB(dsn string) (*sql.DB, error) {
 		return nil, fmt.Errorf("create tables: %w", err)
 	}
 
+	if err := runMigrations(db); err != nil {
+		db.Close()
+		return nil, fmt.Errorf("run migrations: %w", err)
+	}
+
 	return db, nil
 }
 
@@ -57,4 +62,47 @@ func createTables(db *sql.DB) error {
 		}
 	}
 	return nil
+}
+
+// runMigrations applies schema changes to existing databases that predate a
+// given column/table. Each migration is safe to run repeatedly: it checks
+// for the column/table's existence before attempting to add it.
+func runMigrations(db *sql.DB) error {
+	hasCol, err := columnExists(db, "devices", "broadcast_address")
+	if err != nil {
+		return err
+	}
+	if !hasCol {
+		if _, err := db.Exec(`ALTER TABLE devices ADD COLUMN broadcast_address TEXT NOT NULL DEFAULT '255.255.255.255'`); err != nil {
+			return fmt.Errorf("add broadcast_address column: %w", err)
+		}
+	}
+	return nil
+}
+
+// columnExists reports whether the given column is present on the table.
+func columnExists(db *sql.DB, table, column string) (bool, error) {
+	rows, err := db.Query(fmt.Sprintf("PRAGMA table_info(%s)", table))
+	if err != nil {
+		return false, err
+	}
+	defer rows.Close()
+
+	for rows.Next() {
+		var (
+			cid       int
+			name      string
+			ctype     string
+			notnull   int
+			dfltValue sql.NullString
+			pk        int
+		)
+		if err := rows.Scan(&cid, &name, &ctype, &notnull, &dfltValue, &pk); err != nil {
+			return false, err
+		}
+		if name == column {
+			return true, nil
+		}
+	}
+	return false, rows.Err()
 }

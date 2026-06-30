@@ -158,6 +158,7 @@
         var mac = document.getElementById('add-mac').value.trim();
         var ip = document.getElementById('add-ip').value.trim();
         var port = parseInt(document.getElementById('add-port').value, 10) || 9;
+        var broadcast = document.getElementById('add-broadcast').value.trim();
         if (!name || !mac) {
             alert('Name and MAC address are required.');
             return;
@@ -171,6 +172,7 @@
                 mac_address: mac,
                 ip_address: ip,
                 port: port,
+                broadcast_address: broadcast,
             }),
         });
 
@@ -186,6 +188,7 @@
         document.getElementById('add-mac').value = '';
         document.getElementById('add-ip').value = '';
         document.getElementById('add-port').value = '9';
+        document.getElementById('add-broadcast').value = '';
         document.getElementById('add-form').hidden = true;
 
         await loadDevices();
@@ -203,6 +206,8 @@
         if (ip === null) return;
         var port = prompt('WoL port:', device.port);
         if (port === null) return;
+        var broadcast = prompt('Broadcast address (blank for default 255.255.255.255):', device.broadcast_address || '');
+        if (broadcast === null) return;
 
         var res = await api('/api/devices/' + id, {
             method: 'PUT',
@@ -212,6 +217,7 @@
                 mac_address: mac.trim(),
                 ip_address: ip.trim(),
                 port: parseInt(port, 10) || 9,
+                broadcast_address: broadcast.trim(),
             }),
         });
 
