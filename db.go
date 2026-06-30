@@ -49,6 +49,15 @@ func createTables(db *sql.DB) error {
 			created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
 			updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
 		)`,
+		`CREATE TABLE IF NOT EXISTS api_tokens (
+			id INTEGER PRIMARY KEY AUTOINCREMENT,
+			name TEXT NOT NULL,
+			token_hash TEXT NOT NULL UNIQUE,
+			user_id INTEGER NOT NULL REFERENCES users(id),
+			created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+			last_used_at DATETIME,
+			revoked_at DATETIME
+		)`,
 	}
 
 	for _, q := range tables {

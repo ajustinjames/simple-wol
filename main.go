@@ -178,6 +178,11 @@ func main() {
 	mux.HandleFunc("GET /api/devices/{id}/status", app.requireAuth(app.handleDeviceStatus))
 	mux.HandleFunc("POST /api/network/scan", app.requireAuth(app.handleNetworkScan))
 
+	// Token management requires an authenticated browser session (not token auth).
+	mux.HandleFunc("POST /api/tokens", app.requireSession(app.handleCreateToken))
+	mux.HandleFunc("GET /api/tokens", app.requireSession(app.handleListTokens))
+	mux.HandleFunc("DELETE /api/tokens/{id}", app.requireSession(app.handleRevokeToken))
+
 	handler := securityHeaders(mux)
 	addr := ":" + port
 
@@ -267,8 +272,38 @@ func (app *App) setSessionCookie(w http.ResponseWriter, r *http.Request, token s
 	})
 }
 
+// bearerToken extracts the raw token from an "Authorization: Bearer <token>"
+// header, if present.
+func bearerToken(r *http.Request) (string, bool) {
+	auth := r.Header.Get("Authorization")
+	const prefix = "Bearer "
+	if !strings.HasPrefix(auth, prefix) {
+		return "", false
+	}
+	token := strings.TrimSpace(strings.TrimPrefix(auth, prefix))
+	if token == "" {
+		return "", false
+	}
+	return token, true
+}
+
+// requireAuth protects API routes. It accepts either a browser session
+// cookie (in which case the X-Requested-With CSRF check is enforced) or an
+// Authorization: Bearer <token> API token. Token auth is not a cookie-based
+// flow, so CSRF does not apply and the X-Requested-With check is skipped.
 func (app *App) requireAuth(next http.HandlerFunc) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
+		if token, ok := bearerToken(r); ok {
+			if _, err := ValidateAPIToken(app.db, token); err != nil {
+				w.Header().Set("Content-Type", "application/json")
+				w.WriteHeader(http.StatusUnauthorized)
+				w.Write([]byte(`{"error":"unauthorized"}`))
+				return
+			}
+			next(w, r)
+			return
+		}
+
 		cookie, err := r.Cookie("session")
 		if err != nil {
 			w.Header().Set("Content-Type", "application/json")
@@ -290,6 +325,36 @@ func (app *App) requireAuth(next http.HandlerFunc) http.HandlerFunc {
 			return
 		}
 		next(w, r)
+	}
+}
+
+// requireSession protects routes that must only ever be reachable via an
+// authenticated browser session, never an API token. Token management
+// endpoints (create/list/revoke) use this so a leaked token cannot be used
+// to mint or revoke other tokens.
+func (app *App) requireSession(next func(http.ResponseWriter, *http.Request, int64)) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		cookie, err := r.Cookie("session")
+		if err != nil {
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusUnauthorized)
+			w.Write([]byte(`{"error":"unauthorized"}`))
+			return
+		}
+		userID, err := ValidateSession(app.db, cookie.Value)
+		if err != nil {
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusUnauthorized)
+			w.Write([]byte(`{"error":"unauthorized"}`))
+			return
+		}
+		if r.Method != http.MethodGet && r.Header.Get("X-Requested-With") != "XMLHttpRequest" {
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusForbidden)
+			w.Write([]byte(`{"error":"forbidden"}`))
+			return
+		}
+		next(w, r, userID)
 	}
 }
 
@@ -585,4 +650,80 @@ func (app *App) handleNetworkScan(w http.ResponseWriter, r *http.Request) {
 	slog.Info("network scan complete", "devices_found", len(entries))
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(entries)
+}
+
+// --- API Token Handlers ---
+
+const maxTokenNameLen = 100
+
+func (app *App) handleCreateToken(w http.ResponseWriter, r *http.Request, userID int64) {
+	limitBody(w, r)
+
+	var req struct {
+		Name string `json:"name"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, `{"error":"invalid request"}`, http.StatusBadRequest)
+		return
+	}
+
+	name := strings.TrimSpace(req.Name)
+	if name == "" {
+		http.Error(w, `{"error":"name is required"}`, http.StatusBadRequest)
+		return
+	}
+	if len(name) > maxTokenNameLen {
+		http.Error(w, `{"error":"name is too long"}`, http.StatusBadRequest)
+		return
+	}
+
+	raw, tok, err := CreateAPIToken(app.db, userID, name)
+	if err != nil {
+		slog.Error("failed to create api token", "error", err)
+		http.Error(w, `{"error":"failed to create token"}`, http.StatusInternalServerError)
+		return
+	}
+
+	slog.Info("api token created", "id", tok.ID, "name", tok.Name)
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusCreated)
+	json.NewEncoder(w).Encode(map[string]interface{}{
+		"id":         tok.ID,
+		"name":       tok.Name,
+		"token":      raw,
+		"created_at": tok.CreatedAt,
+	})
+}
+
+func (app *App) handleListTokens(w http.ResponseWriter, r *http.Request, userID int64) {
+	tokens, err := ListAPITokens(app.db)
+	if err != nil {
+		slog.Error("failed to list api tokens", "error", err)
+		http.Error(w, `{"error":"internal error"}`, http.StatusInternalServerError)
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(tokens)
+}
+
+func (app *App) handleRevokeToken(w http.ResponseWriter, r *http.Request, userID int64) {
+	id, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
+	if err != nil {
+		http.Error(w, `{"error":"invalid id"}`, http.StatusBadRequest)
+		return
+	}
+
+	if err := RevokeAPIToken(app.db, id); err != nil {
+		slog.Error("failed to revoke api token", "error", err, "id", id)
+		if strings.Contains(err.Error(), "not found") {
+			http.Error(w, `{"error":"token not found"}`, http.StatusNotFound)
+		} else {
+			http.Error(w, `{"error":"internal error"}`, http.StatusInternalServerError)
+		}
+		return
+	}
+
+	slog.Info("api token revoked", "id", id)
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]string{"status": "ok"})
 }

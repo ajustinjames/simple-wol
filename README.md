@@ -9,6 +9,7 @@ A lightweight Wake-on-LAN web application for managing and waking devices on you
 - Network scanning to discover devices on your LAN
 - Dark-themed responsive web UI
 - Single-user authentication with session management
+- API tokens for automation (Home Assistant, cron, scripts)
 - Login rate limiting
 - SQLite database (no external DB required)
 - Docker and Proxmox LXC deployment support
@@ -70,6 +71,30 @@ go build -o simple-wol .
 | `DATA_DIR` | `data`  | Directory for SQLite DB  |
 | `TLS_CERT` | —       | Path to TLS certificate file (enables HTTPS) |
 | `TLS_KEY`  | —       | Path to TLS private key file (enables HTTPS) |
+
+## API Tokens (Automation / Integrations)
+
+For automation — Home Assistant, cron jobs, scripts, phone shortcuts — you can create a long-lived API token instead of using the browser session cookie.
+
+1. Log in to the web UI and click **API Tokens**.
+2. Click **Create Token**, give it a name, and copy the raw token value. It is shown only once.
+3. Use it with the `Authorization: Bearer` header on any `/api/*` request. Token-authenticated requests do not need the `X-Requested-With` header that the browser UI sends (that header is a CSRF defense for cookie-based sessions and doesn't apply to bearer tokens).
+
+**Wake a device by ID:**
+
+```bash
+curl -X POST https://wol.example.com/api/devices/1/wake \
+  -H "Authorization: Bearer wol_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
+```
+
+**List devices (to find the device ID):**
+
+```bash
+curl https://wol.example.com/api/devices \
+  -H "Authorization: Bearer wol_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
+```
+
+Tokens can be revoked at any time from the **API Tokens** panel in the web UI. Token management itself (create/list/revoke) requires an authenticated browser session — it cannot be done with another API token, so a leaked token can't be used to mint or revoke other tokens.
 
 ## Deployment
 
