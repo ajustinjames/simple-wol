@@ -199,3 +199,184 @@ func TestBodySizeLimit_ExactBoundary(t *testing.T) {
 		t.Errorf("expected 400, got %d", w.Code)
 	}
 }
+
+// --- Account Handlers ---
+
+func newAccountTestApp(t *testing.T) (*App, string) {
+	t.Helper()
+	app := setupTestApp(t)
+	if err := CreateUser(app.db, "admin", "testpass1"); err != nil {
+		t.Fatalf("CreateUser failed: %v", err)
+	}
+	uid, err := AuthenticateUser(app.db, "admin", "testpass1")
+	if err != nil {
+		t.Fatalf("AuthenticateUser failed: %v", err)
+	}
+	token, err := CreateSession(app.db, uid, false)
+	if err != nil {
+		t.Fatalf("CreateSession failed: %v", err)
+	}
+	return app, token
+}
+
+func authedRequest(method, url, body, token string) *http.Request {
+	var req *http.Request
+	if body == "" {
+		req = httptest.NewRequest(method, url, nil)
+	} else {
+		req = httptest.NewRequest(method, url, strings.NewReader(body))
+	}
+	req.Header.Set("Content-Type", "application/json")
+	if method != http.MethodGet {
+		req.Header.Set("X-Requested-With", "XMLHttpRequest")
+	}
+	req.AddCookie(&http.Cookie{Name: "session", Value: token})
+	return req
+}
+
+func TestChangePassword_WrongCurrentPassword(t *testing.T) {
+	app, token := newAccountTestApp(t)
+
+	body := `{"current_password":"wrongpass","new_password":"newpassword123"}`
+	req := authedRequest("POST", "/api/account/password", body, token)
+	w := httptest.NewRecorder()
+	app.requireAuth(app.handleChangePassword)(w, req)
+
+	if w.Code != http.StatusUnauthorized {
+		t.Fatalf("expected 401 for wrong current password, got %d: %s", w.Code, w.Body.String())
+	}
+
+	// Original password should still work
+	if _, err := AuthenticateUser(app.db, "admin", "testpass1"); err != nil {
+		t.Errorf("original password should still be valid: %v", err)
+	}
+}
+
+func TestChangePassword_WeakNewPassword(t *testing.T) {
+	app, token := newAccountTestApp(t)
+
+	body := `{"current_password":"testpass1","new_password":"short"}`
+	req := authedRequest("POST", "/api/account/password", body, token)
+	w := httptest.NewRecorder()
+	app.requireAuth(app.handleChangePassword)(w, req)
+
+	if w.Code != http.StatusBadRequest {
+		t.Fatalf("expected 400 for weak new password, got %d: %s", w.Code, w.Body.String())
+	}
+
+	// Original password should still work
+	if _, err := AuthenticateUser(app.db, "admin", "testpass1"); err != nil {
+		t.Errorf("original password should still be valid: %v", err)
+	}
+}
+
+func TestChangePassword_Success(t *testing.T) {
+	app, token := newAccountTestApp(t)
+
+	// Create a second session that should be invalidated by the password change.
+	uid, err := ValidateSession(app.db, token)
+	if err != nil {
+		t.Fatalf("ValidateSession failed: %v", err)
+	}
+	otherToken, err := CreateSession(app.db, uid, false)
+	if err != nil {
+		t.Fatalf("CreateSession failed: %v", err)
+	}
+
+	body := `{"current_password":"testpass1","new_password":"newpassword123"}`
+	req := authedRequest("POST", "/api/account/password", body, token)
+	w := httptest.NewRecorder()
+	app.requireAuth(app.handleChangePassword)(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", w.Code, w.Body.String())
+	}
+
+	// Old password should no longer authenticate.
+	if _, err := AuthenticateUser(app.db, "admin", "testpass1"); err == nil {
+		t.Error("old password should no longer be valid")
+	}
+
+	// New password should authenticate.
+	if _, err := AuthenticateUser(app.db, "admin", "newpassword123"); err != nil {
+		t.Errorf("new password should be valid: %v", err)
+	}
+
+	// The session used to make the request should remain valid.
+	if _, err := ValidateSession(app.db, token); err != nil {
+		t.Errorf("current session should remain valid: %v", err)
+	}
+
+	// The other session should have been invalidated.
+	if _, err := ValidateSession(app.db, otherToken); err == nil {
+		t.Error("other session should have been invalidated after password change")
+	}
+}
+
+func TestChangePassword_Unauthenticated(t *testing.T) {
+	app := setupTestApp(t)
+
+	body := `{"current_password":"a","new_password":"newpassword123"}`
+	req := httptest.NewRequest("POST", "/api/account/password", strings.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("X-Requested-With", "XMLHttpRequest")
+	w := httptest.NewRecorder()
+	app.requireAuth(app.handleChangePassword)(w, req)
+
+	if w.Code != http.StatusUnauthorized {
+		t.Fatalf("expected 401 without session, got %d", w.Code)
+	}
+}
+
+func TestChangeUsername_WrongPassword(t *testing.T) {
+	app, token := newAccountTestApp(t)
+
+	body := `{"new_username":"newadmin","password":"wrongpass"}`
+	req := authedRequest("POST", "/api/account/username", body, token)
+	w := httptest.NewRecorder()
+	app.requireAuth(app.handleChangeUsername)(w, req)
+
+	if w.Code != http.StatusUnauthorized {
+		t.Fatalf("expected 401 for wrong password, got %d: %s", w.Code, w.Body.String())
+	}
+}
+
+func TestChangeUsername_Success(t *testing.T) {
+	app, token := newAccountTestApp(t)
+
+	body := `{"new_username":"newadmin","password":"testpass1"}`
+	req := authedRequest("POST", "/api/account/username", body, token)
+	w := httptest.NewRecorder()
+	app.requireAuth(app.handleChangeUsername)(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", w.Code, w.Body.String())
+	}
+
+	if _, err := AuthenticateUser(app.db, "newadmin", "testpass1"); err != nil {
+		t.Errorf("new username should authenticate: %v", err)
+	}
+	if _, err := AuthenticateUser(app.db, "admin", "testpass1"); err == nil {
+		t.Error("old username should no longer authenticate")
+	}
+}
+
+func TestGetAccount(t *testing.T) {
+	app, token := newAccountTestApp(t)
+
+	req := authedRequest("GET", "/api/account", "", token)
+	w := httptest.NewRecorder()
+	app.requireAuth(app.handleGetAccount)(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", w.Code, w.Body.String())
+	}
+
+	var resp map[string]string
+	if err := json.NewDecoder(w.Body).Decode(&resp); err != nil {
+		t.Fatalf("failed to decode response: %v", err)
+	}
+	if resp["username"] != "admin" {
+		t.Errorf("username = %q, want %q", resp["username"], "admin")
+	}
+}
